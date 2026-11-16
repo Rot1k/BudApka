@@ -1,0 +1,11 @@
+<Shell
+    x:Class="BudApka.AppShell"
+    xmlns:local="clr-namespace:BudApka"
+    Title="BudApka">
+
+    <ShellContent
+        Title="Home"
+        ContentTemplate="{DataTemplate local:MainPage}"
+        Route="MainPage" />
+
+</Shell>
