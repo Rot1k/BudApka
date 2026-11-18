@@ -1,0 +1,62 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+[*.cs]
+indent_size = 4
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:warning
+csharp_new_line_before_open_brace = all
+csharp_indent_block_contents = true
+csharp_indent_braces = false
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_prefer_braces = true:warning
+dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_constructors = false:suggestion
+csharp_style_expression_bodied_operators = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+csharp_style_expression_bodied_indexers = when_on_single_line:suggestion
+csharp_style_expression_bodied_accessors = when_on_single_line:suggestion
+
+dotnet_naming_rule.interfaces_start_with_i.severity = warning
+dotnet_naming_rule.interfaces_start_with_i.symbols = interface_types
+dotnet_naming_rule.interfaces_start_with_i.style = prefix_i
+dotnet_naming_rule.types_use_pascal_case.severity = warning
+dotnet_naming_rule.types_use_pascal_case.symbols = types
+dotnet_naming_rule.types_use_pascal_case.style = pascal_case
+dotnet_naming_rule.members_use_pascal_case.severity = warning
+dotnet_naming_rule.members_use_pascal_case.symbols = members
+dotnet_naming_rule.members_use_pascal_case.style = pascal_case
+dotnet_naming_rule.private_fields_use_underscore_camel_case.severity = warning
+dotnet_naming_rule.private_fields_use_underscore_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_use_underscore_camel_case.style = underscore_camel_case
+dotnet_naming_rule.locals_and_parameters_use_camel_case.severity = warning
+dotnet_naming_rule.locals_and_parameters_use_camel_case.symbols = locals_and_parameters
+dotnet_naming_symbols.interface_types.applicable_kinds = interface
+dotnet_naming_symbols.interface_types.applicable_accessibilities = public, internal, private, protected
+dotnet_naming_symbols.types.applicable_kinds = class, struct, interface, enum, delegate
+dotnet_naming_symbols.types.applicable_accessibilities = public, internal, private, protected
+dotnet_naming_symbols.members.applicable_kinds = method, property, event, field, enumMember
+dotnet_naming_symbols.members.applicable_accessibilities = public, internal, protected
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_symbols.locals_and_parameters.applicable_kinds = local, parameter, local_function
+dotnet_naming_style.prefix_i.required_prefix = I
+dotnet_naming_style.prefix_i.capitalization = pascal_case
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+dotnet_naming_style.underscore_camel_case.capitalization = camel_case
+dotnet_naming_style.camel_case.capitalization = camel_case

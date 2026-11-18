@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BudApka
 {
@@ -7,6 +7,10 @@ namespace BudApka
         public App()
         {
             InitializeComponent();
+            UserAppTheme =
+                Microsoft.Maui.Storage.Preferences.Default.Get("budapka-theme", "light") == "dark"
+                    ? AppTheme.Dark
+                    : AppTheme.Light;
         }
 
         protected override Window CreateWindow(IActivationState? activationState)

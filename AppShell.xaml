@@ -1,11 +1,14 @@
 <Shell
     x:Class="BudApka.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:local="clr-namespace:BudApka"
-    Title="BudApka">
-
+    Title="BudApka"
+    Shell.NavBarIsVisible="False"
+>
     <ShellContent
-        Title="Home"
+        Title="BudApka"
         ContentTemplate="{DataTemplate local:MainPage}"
-        Route="MainPage" />
-
+        Route="MainPage"
+    />
 </Shell>
