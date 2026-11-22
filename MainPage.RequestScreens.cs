@@ -13,12 +13,18 @@ public partial class MainPage
             "Опишіть проблему своїми словами. Ви самі оберете, кому довірити ремонт."
         );
         r.Add(CreateButton(
-            _viewModel.HasOrder ? "Мої замовлення"
-                : _viewModel.HasRequestDraft ? "Продовжити заявку" : "Створити заявку",
+            _viewModel.HasRequestDraft ? "Продовжити заявку" : "Створити заявку",
             true,
-            () => _viewModel.CurrentScreen = _viewModel.HasOrder ? "Orders" : "NewRequest"
+            () => _viewModel.CurrentScreen = "NewRequest",
+            "plus"
         ));
-        if (!_viewModel.HasOrder && _viewModel.HasRequestDraft)
+        if (_viewModel.HasOrder)
+        {
+            r.Add(CreateButton("Мої замовлення", false, () =>
+                _viewModel.CurrentScreen = "Orders", "request"));
+        }
+
+        if (_viewModel.HasRequestDraft)
         {
             r.Add(Body("Заповнені дані доступні в чернетці цієї сесії.", 14, true));
         }
@@ -460,17 +466,23 @@ public partial class MainPage
 
     View Submitted()
     {
+        if (_viewModel.CurrentOrder is not { } order)
+        {
+            return Orders();
+        }
+
+
         var r = Root("Заявку створено", "Можна переглянути демонстраційні відповіді майстрів.");
         var status = new VerticalStackLayout
         {
             Spacing = 8,
             Children =
             {
-                StatusBadge(_viewModel.Status),
-                Body("Заявка №2048", 14, true),
+                StatusBadge(order.Status),
+                Body($"Заявка №{order.Request.Id}", 14, true),
                 new Label
                 {
-                    Text = _viewModel.OrderCategory,
+                    Text = order.Request.Category,
                     FontFamily = "Manrope",
                     FontSize = 18,
                     FontAttributes = FontAttributes.Bold,
@@ -526,12 +538,16 @@ public partial class MainPage
 
     View Responses()
     {
+        if (_viewModel.CurrentOrder is not { } order)
+        {
+            return Orders();
+        }
+
         var r = Root(
             "Оберіть свого майстра",
-            $"Заявка №2048 · {_viewModel.Offers.Count} демо-відповіді. "
-                + "Чат відкриється після вашого вибору."
+            $"Заявка №{order.Request.Id} · Чат відкриється після вашого вибору."
         );
-        foreach (var offer in _viewModel.Offers)
+        foreach (var offer in order.Offers)
         {
             var card = new VerticalStackLayout { Spacing = 12 };
             var top = new Grid
@@ -592,13 +608,13 @@ public partial class MainPage
             card.Add(Body(offer.Price + " · довідкова ціна", 16));
             card.Add(CreateButton("Профіль і відгуки", false, () =>
                 {
-                    _viewModel.PreviewedMaster = offer;
+                    order.PreviewedMaster = offer;
                     _viewModel.CurrentScreen = "MasterProfile";
                 }));
             r.Add(Card(card));
             r.Add(
                 CreateAsyncButton("Обрати " + offer.Name.Split(' ')[0], true, () =>
-                    ConfirmMasterAsync(offer)
+                    ConfirmMasterAsync(order, offer)
                 )
             );
         }

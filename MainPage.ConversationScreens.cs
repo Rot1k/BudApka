@@ -6,7 +6,12 @@ public partial class MainPage
 {
     View MasterProfile()
     {
-        var master = _viewModel.PreviewedMaster ?? _viewModel.Offers[0];
+        if (_viewModel.CurrentOrder is not { } order)
+        {
+            return Orders();
+        }
+
+        var master = order.PreviewedMaster ?? order.Offers[0];
         var r = Root(
             "Познайомтеся з майстром",
             "Профіль, досвід і відгуки перед вибором. Усі дані демонстраційні."
@@ -46,7 +51,7 @@ public partial class MainPage
         r.Add(Card(card));
         r.Add(
             CreateAsyncButton("Обрати " + master.Name.Split(' ')[0], true, () =>
-                ConfirmMasterAsync(master)
+                ConfirmMasterAsync(order, master)
             )
         );
         r.Add(Body("Після вибору майстер отримає точну адресу, а ви — доступ до чату.", 14, true));
@@ -55,7 +60,7 @@ public partial class MainPage
         return r;
     }
 
-    async Task ConfirmMasterAsync(MasterOffer master)
+    async Task ConfirmMasterAsync(RepairOrder order, MasterOffer master)
     {
         bool confirmed = await DisplayAlertAsync(
             $"Обрати майстра: {master.Name}?",
@@ -64,31 +69,54 @@ public partial class MainPage
             "Повернутися");
         if (confirmed)
         {
-            _viewModel.ChooseMaster(master);
+            _viewModel.ChooseMaster(order, master);
         }
+    }
+
+    View Chats()
+    {
+        var page = Root("Чати");
+        bool client = _viewModel.Mode == AccountMode.Client;
+        var conversations = _viewModel.Orders.Where(_viewModel.CanChat).ToArray();
+        foreach (var order in conversations)
+        {
+            var card = new VerticalStackLayout { Spacing = 8 };
+            card.Add(Body($"№{order.Request.Id} · {order.Request.Category}", 16, true));
+            if (client && order.SelectedMaster is { } master)
+            {
+                card.Add(Body(master.Name));
+            }
+
+            card.Add(CreateButton("Відкрити чат", false, () =>
+                _viewModel.OpenOrder(order, "Chat"), "chat"));
+            page.Add(Card(card));
+        }
+
+        if (conversations.Length == 0)
+        {
+            page.Add(Card(Body("Активних розмов поки немає.")));
+            page.Add(CreateButton(client ? "До замовлень" : "До заявок", true, () =>
+                _viewModel.CurrentScreen = client ? "Orders" : "AvailableRequests"));
+        }
+
+        return page;
     }
 
     View Chat()
     {
-        if (!_viewModel.CanChat)
+        if (_viewModel.CurrentOrder is not { } order || !_viewModel.CanChat(order))
         {
-            var empty = Root("Чати", "Активних розмов поки немає.");
-            bool client = _viewModel.Mode == AccountMode.Client;
-            empty.Add(Body(client
-                ? "Чат відкриється після вибору майстра."
-                : "Чат відкриється, коли клієнт обере майстра."));
-            string destination = client ? "Orders" : "AvailableRequests";
-            empty.Add(CreateButton(client ? "До замовлень" : "До заявок", true, () =>
-                _viewModel.CurrentScreen = destination));
-            return empty;
+            return Chats();
         }
+
+        var mode = _viewModel.Mode;
         var r = Root(
             _viewModel.Mode == AccountMode.Master
                 ? "Клієнт Олег"
-                : _viewModel.SelectedMaster?.Name ?? "Олександр Коваль",
+                : order.SelectedMaster?.Name ?? "Олександр Коваль",
             _viewModel.Mode == AccountMode.Master
-                ? "Клієнт обрав вас · заявка №2048. Тепер доступні чат і точна адреса."
-                : "Майстра обрано · заявка №2048. Обговоріть деталі вільним текстом."
+                ? $"Клієнт обрав вас · заявка №{order.Request.Id}."
+                : $"Майстра обрано · заявка №{order.Request.Id}."
         );
         r.Add(
             Card(
@@ -106,7 +134,7 @@ public partial class MainPage
                         ),
                         new Label
                         {
-                            Text = _viewModel.OrderCategory,
+                            Text = order.Request.Category,
                             FontFamily = "Manrope",
                             FontSize = 18,
                             FontAttributes = FontAttributes.Bold,
@@ -116,8 +144,8 @@ public partial class MainPage
                             string.Join(
                                 Environment.NewLine,
                                 "Орієнтир майстра: "
-                                    + (_viewModel.SelectedMaster?.Price ?? "1 200 грн"),
-                                "Точна адреса: " + _viewModel.OrderAddress
+                                    + (order.SelectedMaster?.Price ?? "1 200 грн"),
+                                "Точна адреса: " + order.ExactAddress
                             ),
                             14
                         ),
@@ -127,15 +155,15 @@ public partial class MainPage
         );
         r.Add(Body("Демо-чат · повідомлення зберігаються в цій сесії.", 14, true));
         var messages = new VerticalStackLayout { Spacing = 12 };
-        foreach (var message in _viewModel.Messages)
+        foreach (var message in order.Messages)
         {
             messages.Add(ChatBubble(message));
         }
         r.Add(messages);
 
         r.Add(Body("Повідомлення", 14));
-        var entry = Field("Напишіть повідомлення", v => _viewModel.MessageDraft = v);
-        entry.Text = _viewModel.MessageDraft;
+        var entry = Field("Напишіть повідомлення", value => order.SetMessageDraft(mode, value));
+        entry.Text = order.GetMessageDraft(mode);
         SemanticProperties.SetDescription(entry, "Текст повідомлення");
         var send = ButtonStyle("Додати повідомлення", false);
         send.ImageSource = Icon("send");
@@ -146,9 +174,9 @@ public partial class MainPage
             send.IsEnabled = !string.IsNullOrWhiteSpace(e.NewTextValue);
         BindButtonAction(send, () =>
         {
-            if (_viewModel.AddChatMessage())
+            if (_viewModel.Mode == mode && _viewModel.AddChatMessage(order))
             {
-                messages.Add(ChatBubble(_viewModel.Messages[^1]));
+                messages.Add(ChatBubble(order.Messages[^1]));
                 entry.Text = "";
                 feedback.Text = "Додано до демо-чату.";
                 feedback.IsVisible = true;
@@ -164,9 +192,9 @@ public partial class MainPage
             r.Add(CreateButton("Час візиту", true, () =>
                 _viewModel.CurrentScreen = "VisitDetails", "calendar"));
         }
-        else if (_viewModel.Status == OrderStatus.VisitRecorded)
+        else if (order.Status == OrderStatus.VisitRecorded)
         {
-            r.Add(Body("Час візиту: " + _viewModel.RecordedVisitText, 14));
+            r.Add(Body("Час візиту: " + order.RecordedVisitText, 14));
         }
 
         return r;

@@ -6,6 +6,13 @@ public partial class MainPage
 {
     View Visit()
     {
+        if (_viewModel.Mode != AccountMode.Client
+            || _viewModel.CurrentOrder is not { } order || !_viewModel.CanChat(order))
+        {
+            return Orders();
+        }
+
+
         var r = Root(
             "Запишіть обговорений час",
             "Це зручна нотатка після чату, не формальний контракт."
@@ -13,14 +20,14 @@ public partial class MainPage
         r.Add(Body("Дата", 14));
         var datePicker = new DatePicker
         {
-            Date = _viewModel.VisitDate,
+            Date = order.VisitDate,
             MinimumDate = DateTime.Today,
             FontFamily = "Inter",
             FontSize = 16,
             TextColor = ThemeColor("#202823", "#F4F7FB"),
             BackgroundColor = ThemeColor("#FFFFFF", "#202833"),
         };
-        datePicker.DateSelected += (_, e) => _viewModel.VisitDate = e.NewDate ?? DateTime.Today;
+        datePicker.DateSelected += (_, e) => order.VisitDate = e.NewDate ?? DateTime.Today;
         r.Add(
             new Border
             {
@@ -36,10 +43,10 @@ public partial class MainPage
         r.Add(
             LabeledField(
                 "Зручний проміжок",
-                _viewModel.VisitWindow,
+                order.VisitWindow,
                 "Після 17:00",
                 "Довільний текст — без фіксованих слотів.",
-                v => _viewModel.VisitWindow = v,
+                v => order.VisitWindow = v,
                 validate: v => Required(v, "Вкажіть погоджений час, наприклад «після 17:00».")
             )
         );
@@ -51,15 +58,15 @@ public partial class MainPage
                 Body("ДОСТУПНО ЛИШЕ ОБРАНОМУ МАЙСТРУ", 14, true),
                 new Label
                 {
-                    Text = _viewModel.OrderCategory,
+                    Text = order.Request.Category,
                     FontFamily = "Manrope",
                     FontSize = 18,
                     FontAttributes = FontAttributes.Bold,
                     TextColor = ThemeColor("#202823", "#F4F7FB"),
                 },
-                Body(_viewModel.SelectedMaster?.Name ?? "Олександр Коваль"),
-                Body(_viewModel.OrderAddress),
-                Body("Орієнтир: " + (_viewModel.SelectedMaster?.Price ?? "1 200 грн")),
+                Body(order.SelectedMaster?.Name ?? "Олександр Коваль"),
+                Body(order.ExactAddress),
+                Body("Орієнтир: " + (order.SelectedMaster?.Price ?? "1 200 грн")),
             },
         };
         r.Add(Card(details));
@@ -67,7 +74,7 @@ public partial class MainPage
             {
                 if (ValidateFields())
                 {
-                    _viewModel.RecordVisit();
+                    _viewModel.RecordVisit(order);
                 }
             }));
         r.Add(CreateButton("Повернутися до чату", false, () => _viewModel.CurrentScreen = "Chat"));
@@ -76,6 +83,13 @@ public partial class MainPage
 
     View Completion()
     {
+        if (_viewModel.Mode != AccountMode.Client || _viewModel.CurrentOrder is not { } order
+            || order.Status != OrderStatus.Completed)
+        {
+            return Orders();
+        }
+
+
         var r = Root(
             "Як усе минуло?",
             "Роботу позначено завершеною. За бажанням залиште оцінку та відгук."
@@ -96,15 +110,15 @@ public partial class MainPage
                         StatusBadge(OrderStatus.Completed),
                         new Label
                         {
-                            Text = _viewModel.OrderCategory,
+                            Text = order.Request.Category,
                             FontFamily = "Manrope",
                             FontSize = 18,
                             FontAttributes = FontAttributes.Bold,
                             TextColor = ThemeColor("#202823", "#F4F7FB"),
                         },
                         Body(
-                            (_viewModel.SelectedMaster?.Name ?? "Олександр Коваль")
-                                + " · заявка №2048"
+                            (order.SelectedMaster?.Name ?? "Олександр Коваль")
+                                + $" · заявка №{order.Request.Id}"
                         ),
                     },
                 },
@@ -113,13 +127,13 @@ public partial class MainPage
         r.Add(
             LabeledField(
                 "Оцінка",
-                _viewModel.Rating.ToString(),
+                order.Rating.ToString(),
                 "5 із 5",
                 "Оберіть оцінку від 1 до 5.",
                 v =>
                 {
                     if (int.TryParse(v, out var value))
-                        _viewModel.Rating = Math.Clamp(value, 1, 5);
+                        order.Rating = Math.Clamp(value, 1, 5);
                 },
                 Keyboard.Numeric
             )
@@ -127,7 +141,7 @@ public partial class MainPage
         r.Add(Body("Відгук · необов’язково", 14));
         var review = new Editor
         {
-            Text = _viewModel.ReviewText,
+            Text = order.ReviewText,
             Placeholder = "Напишіть кілька слів про роботу",
             FontFamily = "Inter",
             FontSize = 16,
@@ -136,23 +150,25 @@ public partial class MainPage
             BackgroundColor = ThemeColor("#FFFFFF", "#202833"),
             HeightRequest = 112,
         };
-        review.TextChanged += (_, e) => _viewModel.ReviewText = e.NewTextValue;
+        review.TextChanged += (_, e) => order.ReviewText = e.NewTextValue;
         r.Add(review);
         r.Add(CreateButton("Повернути попередній статус", false, () =>
         {
-            _viewModel.Status = OrderStatus.VisitRecorded;
+            order.Status = OrderStatus.VisitRecorded;
             _viewModel.CurrentScreen = "Orders";
         }));
         r.Add(CreateButton("Зберегти відгук", true, () =>
-            {
-                _viewModel.Status = OrderStatus.Completed;
-                _viewModel.CurrentScreen = "Orders";
-            }));
+        {
+            order.ReviewText = order.ReviewText.Trim();
+            order.HasReview = true;
+            _viewModel.CurrentScreen = "Orders";
+        }));
         r.Add(CreateButton("Пропустити відгук", false, () =>
-            {
-                _viewModel.Status = OrderStatus.Completed;
-                _viewModel.CurrentScreen = "Orders";
-            }));
+        {
+            order.ReviewText = "";
+            order.Rating = 5;
+            _viewModel.CurrentScreen = "Orders";
+        }));
         return r;
     }
 
@@ -165,71 +181,35 @@ public partial class MainPage
         var r = Root("Мої замовлення", "Поточний статус і наступна дія — в одному місці.");
         var filter = _clientOrdersFilter;
         AddOrderFilters(r, filter);
-        bool visible = _viewModel.PublishedRequest is { } request
-            && filter.Matches(request.CategoryId, _viewModel.Status);
-        if (visible)
+        var orders = _viewModel.Orders
+            .Where(order => filter.Matches(order.Request.CategoryId, order.Status))
+            .ToArray();
+        foreach (var order in orders)
         {
-            var current = new VerticalStackLayout
-            {
-                Spacing = 8,
-                Children =
-                {
-                    StatusBadge(_viewModel.Status),
-                    new Label
-                    {
-                        Text = _viewModel.OrderCategory,
-                        FontFamily = "Manrope",
-                        FontSize = 18,
-                        FontAttributes = FontAttributes.Bold,
-                        TextColor = ThemeColor("#202823", "#F4F7FB"),
-                    },
-                    Body(_viewModel.OrderDistrict),
-                    Body(EquipmentSummary(_viewModel.PublishedRequest?.Equipment), 14),
-                    Body(_viewModel.SelectedMaster?.Name ?? "Майстра ще не обрано"),
-
-                },
-            };
-            if (!string.IsNullOrEmpty(_viewModel.RecordedVisitText))
-            {
-                current.Add(Body(_viewModel.RecordedVisitText, 14, true));
-            }
-            r.Add(Card(current));
-            if (_viewModel.Status == OrderStatus.HasResponses)
-            {
-                r.Add(CreateButton("Переглянути відповіді", true, () =>
-                    _viewModel.CurrentScreen = "Responses"));
-            }
-            if (_viewModel.CanChat)
-            {
-                r.Add(CreateButton("Відкрити чат", false, () =>
-                    _viewModel.CurrentScreen = "Chat"));
-            }
-            if (_viewModel.Status == OrderStatus.VisitRecorded)
-            {
-                r.Add(CreateAsyncButton("Позначити завершеним", true, () =>
-                    ChangeOrderStatusAsync(OrderStatus.Completed)));
-            }
-            if (_viewModel.Status is not (OrderStatus.Completed or OrderStatus.Cancelled))
-            {
-                r.Add(CreateAsyncButton("Скасувати замовлення", false, () =>
-                    ChangeOrderStatusAsync(OrderStatus.Cancelled)));
-            }
+            r.Add(OrderCard(order, AccountMode.Client));
         }
-        if (!AddDemoHistory(r, filter) && !visible)
+
+        if (!AddDemoHistory(r, filter) && orders.Length == 0)
         {
             AddOrderEmptyState(r, filter);
         }
-        if (!_viewModel.HasOrder)
-        {
-            r.Add(CreateButton("Створити заявку", true, () =>
-                _viewModel.CurrentScreen = "NewRequest", "plus"));
-        }
+
+        r.Add(CreateButton(
+            _viewModel.HasRequestDraft ? "Продовжити заявку" : "Створити заявку",
+            true, () => _viewModel.CurrentScreen = "NewRequest", "plus"));
         return r;
     }
 
-    async Task ChangeOrderStatusAsync(OrderStatus next)
+    async Task ChangeOrderStatusAsync(RepairOrder order, OrderStatus next)
     {
-        OrderStatus previous = _viewModel.Status;
+        OrderStatus previous = order.Status;
+        if (previous is OrderStatus.Completed or OrderStatus.Cancelled
+            || (next == OrderStatus.Completed && previous != OrderStatus.VisitRecorded))
+        {
+            return;
+        }
+
+
         bool completing = next == OrderStatus.Completed;
         bool confirmed = await DisplayAlertAsync(
             completing ? "Завершити замовлення?" : "Скасувати замовлення?",
@@ -239,16 +219,17 @@ public partial class MainPage
             "Повернутися"
         );
 
-        if (!confirmed || _viewModel.Status != previous || _viewModel.Mode != AccountMode.Client)
+        if (!confirmed || order.Status != previous || _viewModel.Mode != AccountMode.Client
+            || _viewModel.CurrentScreen != "Orders")
         {
             return;
         }
 
-        _viewModel.Status = next;
-        SemanticScreenReader.Default.Announce(_viewModel.StatusText);
+        order.Status = next;
+        SemanticScreenReader.Default.Announce(PrototypeViewModel.OrderStatusLabel(next));
         if (completing)
         {
-            _viewModel.CurrentScreen = "Completion";
+            _viewModel.OpenOrder(order, "Completion");
         }
         else
         {
@@ -261,58 +242,92 @@ public partial class MainPage
         var r = Root("Мої роботи", "Замовлення, у яких клієнт обрав вас.");
         var filter = _masterOrdersFilter;
         AddOrderFilters(r, filter);
-        bool visible = _viewModel.IsLocalMasterSelected
-            && _viewModel.PublishedRequest is { } request
-            && filter.Matches(request.CategoryId, _viewModel.Status);
-        if (visible)
+        var orders = _viewModel.Orders
+            .Where(order => order.IsLocalMasterSelected
+                && filter.Matches(order.Request.CategoryId, order.Status))
+            .ToArray();
+        foreach (var order in orders)
         {
-            AddCurrentMasterJob(r);
+            r.Add(OrderCard(order, AccountMode.Master));
         }
-        if (!AddDemoHistory(r, filter) && !visible)
+
+        if (!AddDemoHistory(r, filter) && orders.Length == 0)
         {
             AddOrderEmptyState(r, filter);
         }
-        if (!_viewModel.IsLocalMasterSelected)
+
+        if (orders.Length == 0)
         {
             r.Add(CreateButton("До доступних заявок", true, () =>
                 _viewModel.CurrentScreen = "AvailableRequests"));
         }
+
         return r;
     }
 
-    void AddCurrentMasterJob(VerticalStackLayout r)
+    View OrderCard(RepairOrder order, AccountMode mode)
     {
-        var current = new VerticalStackLayout
+        var request = order.Request;
+        var content = new VerticalStackLayout
         {
             Spacing = 8,
             Children =
             {
-                StatusBadge(_viewModel.Status),
-                new Label
-                {
-                    Text = _viewModel.OrderCategory,
-                    FontFamily = "Manrope",
-                    FontSize = 18,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = ThemeColor("#202823", "#F4F7FB"),
-                },
-                Body(_viewModel.OrderDistrict),
-                Body(EquipmentSummary(_viewModel.PublishedRequest?.Equipment), 14),
+                StatusBadge(order.Status),
+                Body($"№{request.Id} · {request.Category}", 18, true),
+                Body(request.Area.DisplayName),
+                Body(EquipmentSummary(request.Equipment), 14),
             },
         };
-        if (_viewModel.Status is OrderStatus.MasterSelected or OrderStatus.VisitRecorded)
+        bool client = mode == AccountMode.Client;
+        if (client)
         {
-            current.Add(Body("Точна адреса: " + _viewModel.OrderAddress));
+            content.Add(Body(order.SelectedMaster?.Name ?? "Майстра ще не обрано"));
         }
-        if (!string.IsNullOrEmpty(_viewModel.RecordedVisitText))
+        else if (_viewModel.CanChat(order))
         {
-            current.Add(Body(_viewModel.RecordedVisitText));
+            content.Add(Body("Точна адреса: " + order.ExactAddress));
         }
-        r.Add(Card(current));
-        if (_viewModel.CanChat)
+
+        if (order.RecordedVisitText.Length > 0)
         {
-            r.Add(CreateButton("Відкрити чат", true, () => _viewModel.CurrentScreen = "Chat"));
+            content.Add(Body(order.RecordedVisitText, 14, true));
         }
+
+        if (order.Status == OrderStatus.Completed && order.HasReview)
+        {
+            content.Add(Body($"Оцінка: {order.Rating} із 5", 14, true));
+            if (order.ReviewText.Length > 0)
+            {
+                content.Add(Body(order.ReviewText, 14));
+            }
+        }
+
+        if (client && order.Status == OrderStatus.HasResponses)
+        {
+            content.Add(CreateButton("Переглянути відповіді", true, () =>
+                _viewModel.OpenOrder(order, "Responses")));
+        }
+
+        if (_viewModel.CanChat(order))
+        {
+            content.Add(CreateButton("Відкрити чат", !client, () =>
+                _viewModel.OpenOrder(order, "Chat"), "chat"));
+        }
+
+        if (client && order.Status == OrderStatus.VisitRecorded)
+        {
+            content.Add(CreateAsyncButton("Позначити завершеним", true, () =>
+                ChangeOrderStatusAsync(order, OrderStatus.Completed)));
+        }
+
+        if (client && order.Status is not (OrderStatus.Completed or OrderStatus.Cancelled))
+        {
+            content.Add(CreateAsyncButton("Скасувати замовлення", false, () =>
+                ChangeOrderStatusAsync(order, OrderStatus.Cancelled)));
+        }
+
+        return Card(content);
     }
 
     bool AddDemoHistory(VerticalStackLayout page, OrderFilter filter)

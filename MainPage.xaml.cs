@@ -362,18 +362,18 @@ public partial class MainPage : ContentPage
         string active = _viewModel.CurrentScreen switch
         {
             "Home" => master ? "Доступні" : "Головна",
-            "Chat" => "Чати",
+            "Chat" or "Chats" => "Чати",
             "Profile" or "Equipment" or "EquipmentForm" or "MasterActivation" => "Профіль",
             "Orders" => master ? "Мої роботи" : "Заявки",
             "AvailableRequests" or "MasterRequest" or "MasterFilters" => master ? "Доступні" : "Заявки",
-            "Proposal" or "ProposalSent" or "MasterCompleted" => master ? "Мої роботи" : "Заявки",
+            "Proposal" or "ProposalSent" => master ? "Мої роботи" : "Заявки",
             _ => "Заявки",
         };
         Action[] actions = new Action[]
         {
             () => NavigateTab(ModeHome),
             () => NavigateTab("Orders"),
-            () => NavigateTab("Chat"),
+            () => NavigateTab("Chats"),
             () => NavigateTab("Profile"),
         };
         var g = new Grid

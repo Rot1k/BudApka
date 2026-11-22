@@ -36,8 +36,12 @@ public sealed record ChatMessage(string Text, string Time, bool FromClient);
 
 public sealed record EquipmentRecord(string Name, string Type, string Model, string Notes = "");
 
-public sealed class PrototypeViewModel : INotifyPropertyChanged
+internal sealed class PrototypeViewModel : INotifyPropertyChanged
 {
+    private readonly Dictionary<int, RepairOrder> _orders = new();
+    // The built-in sample requests use numbers 2051 and 2052.
+    private int _nextRequestId = 2053;
+
     string _screen = "Home";
     AccountMode _mode = AccountMode.Client;
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -102,66 +106,77 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
     public string ProfileName { get; set; } = "";
     public bool IsSignedIn { get; set; }
     public bool HasRequestDraft { get; set; }
-    public bool HasOrder { get; private set; }
-    public string OrderCategory => PublishedRequest?.Category ?? "";
-    public RepairRequest? PublishedRequest { get; private set; }
-    public string OrderDistrict { get; private set; } = "";
-    public string OrderAddress { get; private set; } = "";
+    public bool HasOrder => _orders.Count > 0;
+    public IEnumerable<RepairOrder> Orders =>
+        _orders.Values.OrderByDescending(order => order.Request.Id);
+    public RepairOrder? CurrentOrder { get; private set; }
+
+    public RepairOrder? FindOrder(int requestId) => _orders.GetValueOrDefault(requestId);
+
+    public void OpenOrder(RepairOrder order, string screen)
+    {
+        CurrentOrder = order;
+        CurrentScreen = screen;
+    }
+
     public string SavedAddress { get; private set; } = "";
     public const string LocalMasterId = "local-master";
-    public bool IsLocalMasterSelected => SelectedMaster?.Id == LocalMasterId;
-    public bool CanChat => SelectedMaster != null
-        && (Mode == AccountMode.Client || IsLocalMasterSelected)
-        && Status is OrderStatus.MasterSelected or OrderStatus.VisitRecorded;
-    public MasterOffer? PreviewedMaster { get; set; }
+    public bool CanChat(RepairOrder order) => order.SelectedMaster != null
+        && (Mode == AccountMode.Client || order.IsLocalMasterSelected)
+        && order.Status is OrderStatus.MasterSelected or OrderStatus.VisitRecorded;
 
     public void SubmitRequest()
     {
-        if (HasOrder)
-        {
-            CurrentScreen = "Orders";
-            return;
-        }
-
-        if (DraftError != null || RegionCode.Length == 0 || SettlementCode.Length == 0)
+        if (Mode != AccountMode.Client || !IsSignedIn || !HasRequestDraft
+            || DraftError != null || RegionCode.Length == 0 || SettlementCode.Length == 0
+            || ExactAddress.Length == 0)
         {
             return;
         }
 
-        PublishedRequest = new RepairRequest(2048, CategoryId, Category, Category,
-            Description.Trim(), string.Join(", ", Symptoms), Budget.Trim(),
-            new WorkArea(RegionCode, SettlementCode, CityDistrictCode, District),
+        var request = new RepairRequest(
+            _nextRequestId++, CategoryId, Category, Category, Description.Trim(),
+            string.Join(", ", Symptoms), Budget.Trim(),
+            new WorkArea(RegionCode, SettlementCode, CityDistrictCode, District.Trim()),
             DraftEquipment, PhotoPath);
-        for (int index = 0; index < Offers.Count; index++)
-        {
-            Offers[index] = Offers[index] with { Specialty = Category };
-        }
-        OrderDistrict = District.Trim();
-        OrderAddress = ExactAddress.Trim();
+        var order = new RepairOrder(request, ExactAddress);
+        _orders.Add(request.Id, order);
         if (SaveAddress)
         {
-            SavedAddress = $"{OrderDistrict}, {OrderAddress}";
+            SavedAddress = $"{request.Area.DisplayName}, {order.ExactAddress}";
         }
 
-        HasOrder = true;
-        Status = OrderStatus.HasResponses;
-        CurrentScreen = "Submitted";
+        CategoryId = "";
+        OtherCategory = "";
+        Symptoms.Clear();
+        Description = "";
+        DraftEquipment = null;
+        PhotoPath = "";
+        RegionCode = "";
+        SettlementCode = "";
+        CityDistrictCode = "";
+        District = "";
+        Street = "";
+        Building = "";
+        Budget = "1500";
+        SaveAddress = false;
+        HasRequestDraft = false;
+
+        OpenOrder(order, "Submitted");
     }
 
-    public bool AddChatMessage()
+    public bool AddChatMessage(RepairOrder order)
     {
-        if (!CanChat || string.IsNullOrWhiteSpace(MessageDraft))
+        string text = order.GetMessageDraft(Mode).Trim();
+        if (CurrentOrder != order || !CanChat(order) || text.Length == 0)
         {
             return false;
         }
 
-        Messages.Add(new(MessageDraft.Trim(), DateTime.Now.ToString("HH:mm"),
-            Mode == AccountMode.Client));
-        MessageDraft = "";
+        order.Messages.Add(new(text, DateTime.Now.ToString("HH:mm"), Mode == AccountMode.Client));
+        order.SetMessageDraft(Mode, "");
         return true;
     }
-    public OrderStatus Status { get; set; } = OrderStatus.Draft;
-    public string StatusText => OrderStatusLabel(Status);
 
     public static string OrderStatusLabel(OrderStatus status) =>
         status switch
@@ -178,59 +193,38 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
     {
         string reply = MasterReply.Trim();
         string price = MasterPrice.Trim();
+        var order = FindOrder(request.Id);
+        if (Mode != AccountMode.Master || MasterProposals.GetValueOrDefault(request.Id).Sent
+            || (order != null && order.Status is not
+                (OrderStatus.Submitted or OrderStatus.HasResponses)))
+        {
+            return;
+        }
+
         MasterProposals[request.Id] = (reply, price, sent);
-        if (sent && request.Id == PublishedRequest?.Id
-            && Status is OrderStatus.Submitted or OrderStatus.HasResponses)
+        if (sent && order != null)
         {
             string name = string.IsNullOrWhiteSpace(ProfileName) ? "Майстер із цієї сесії"
                 : ProfileName.Trim();
             var offer = new MasterOffer(LocalMasterId, name, request.Category, 0,
                 reply, price + " грн", "", "", "");
-            Offers.RemoveAll(existing => existing.Id == LocalMasterId);
-            Offers.Add(offer);
-            Status = OrderStatus.HasResponses;
+            order.Offers.Add(offer);
+            order.Status = OrderStatus.HasResponses;
         }
     }
 
-    public List<MasterOffer> Offers { get; } =
-        new()
-        {
-            new(
-                "oleksandr",
-                "Олександр Коваль",
-                "Сантехнік",
-                8,
-                "Можу взятися за роботу й уточнити деталі.",
-                "1 200 грн",
-                "4,9",
-                "12",
-                "master_oleksandr.jpg"
-            ),
-            new(
-                "iryna",
-                "Ірина Мельник",
-                "Сантехнік",
-                6,
-                "Вільна завтра після 17:00.",
-                "1 400 грн",
-                "4,9",
-                "12",
-                "master_iryna.jpg"
-            ),
-        };
-    public MasterOffer? SelectedMaster { get; set; }
-    public List<ChatMessage> Messages { get; } = new();
-    public DateTime VisitDate { get; set; } = DateTime.Today.AddDays(2);
-    public string VisitWindow { get; set; } = "Після 17:00";
-    public string RecordedVisitText { get; private set; } = "";
-
-    public void RecordVisit()
+    public void RecordVisit(RepairOrder order)
     {
-        RecordedVisitText = $"{VisitDate:d} · {VisitWindow.Trim()}";
-        Status = OrderStatus.VisitRecorded;
+        if (CurrentOrder != order || Mode != AccountMode.Client || !CanChat(order))
+        {
+            return;
+        }
+
+        order.RecordedVisitText = $"{order.VisitDate:d} · {order.VisitWindow.Trim()}";
+        order.Status = OrderStatus.VisitRecorded;
         CurrentScreen = "Orders";
     }
-    public string MessageDraft { get; set; } = "";
+
     public string MasterReply { get; set; } = "Можу приїхати завтра.";
     public string MasterPrice { get; set; } = "1200";
     public string MasterPortfolioPhotoPath { get; set; } = "";
@@ -249,9 +243,6 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
     public string EquipmentNotes { get; set; } = "";
     public List<EquipmentRecord> Equipment { get; } =
         new() { new("Змішувач у ванній", "Сантехніка", "Grohe") };
-    public int Rating { get; set; } = 5;
-    public string ReviewText { get; set; } = "";
-
     public void SetMode(AccountMode mode)
     {
         Mode = mode;
@@ -261,20 +252,22 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
             : "MasterActivation";
     }
 
-    public void ChooseMaster(MasterOffer selectedMaster)
+    public void ChooseMaster(RepairOrder order, MasterOffer selectedMaster)
     {
-        if (!HasOrder || Mode != AccountMode.Client || Status != OrderStatus.HasResponses)
+        if (CurrentOrder != order || Mode != AccountMode.Client
+            || order.Status != OrderStatus.HasResponses || !order.Offers.Contains(selectedMaster))
         {
             return;
         }
 
-        SelectedMaster = selectedMaster;
-        Status = OrderStatus.MasterSelected;
-        Messages.Clear();
-        if (!IsLocalMasterSelected)
+        order.SelectedMaster = selectedMaster;
+        order.Status = OrderStatus.MasterSelected;
+        if (!order.IsLocalMasterSelected)
         {
-            Messages.Add(new("Добрий день! Можу приїхати завтра о 17:00.", "10:24", false));
+            order.Messages.Add(new(
+                "Добрий день! Можу приїхати завтра о 17:00.", "10:24", false));
         }
+
         CurrentScreen = "Chat";
     }
 

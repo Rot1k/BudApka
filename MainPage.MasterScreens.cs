@@ -174,12 +174,10 @@ public partial class MainPage
             page.Add(Body("Фільтри: " + string.Join(" · ", labels), 14));
         }
 
-        IEnumerable<RepairRequest> requests = DemoRequests;
-        if (_viewModel.PublishedRequest is { } published
-            && _viewModel.Status is OrderStatus.Submitted or OrderStatus.HasResponses)
-        {
-            requests = requests.Prepend(published);
-        }
+        var requests = _viewModel.Orders
+            .Where(order => order.Status is OrderStatus.Submitted or OrderStatus.HasResponses)
+            .Select(order => order.Request)
+            .Concat(DemoRequests);
 
         var results = requests.Where(request => region.Includes(request.Area)
             && (filter.RegionCode.Length == 0 || filter.Includes(request.Area))
@@ -213,9 +211,9 @@ public partial class MainPage
     }
 
     OrderStatus AvailableStatus(RepairRequest request) =>
-        request.Id == _viewModel.PublishedRequest?.Id ? _viewModel.Status
-            : _viewModel.MasterProposals.GetValueOrDefault(request.Id).Sent
-                ? OrderStatus.HasResponses : OrderStatus.Submitted;
+        _viewModel.FindOrder(request.Id)?.Status
+        ?? (_viewModel.MasterProposals.GetValueOrDefault(request.Id).Sent
+            ? OrderStatus.HasResponses : OrderStatus.Submitted);
 
     void ResetMasterFilters()
     {
@@ -443,54 +441,6 @@ public partial class MainPage
             )
         );
         r.Add(CreateButton("Мої роботи", false, () => _viewModel.CurrentScreen = "Orders"));
-        return r;
-    }
-
-    View MasterCompleted()
-    {
-        var r = Root(
-            "Роботу завершено",
-            "Клієнт позначив заявку завершеною. Відгук з’явиться у вашому профілі."
-        );
-        r.Add(
-            new Border
-            {
-                BackgroundColor = Color.FromArgb(IsDarkTheme ? "#244D38" : "#EAF4ED"),
-                Stroke = ThemeColor("#E3E7DF", "#344151"),
-                StrokeThickness = 1,
-                StrokeShape = new RoundRectangle { CornerRadius = 16 },
-                Padding = 16,
-                Content = new VerticalStackLayout
-                {
-                    Spacing = 8,
-                    Children =
-                    {
-                        StatusBadge(OrderStatus.Completed),
-                        new Label
-                        {
-                            Text = _viewModel.OrderCategory,
-                            FontFamily = "Manrope",
-                            FontSize = 18,
-                            FontAttributes = FontAttributes.Bold,
-                            TextColor = ThemeColor("#202823", "#F4F7FB"),
-                        },
-                        Body(
-                            "Ваша орієнтовна ціна: "
-                                + _viewModel.MasterPrice
-                                + " грн. Оцінка клієнта: 5 із 5 · демонстраційний відгук."
-                        ),
-                    },
-                },
-            }
-        );
-        r.Add(
-            CreateButton("До доступних заявок", true, () =>
-                _viewModel.CurrentScreen = "AvailableRequests"
-            )
-        );
-        r.Add(
-            CreateButton("Переглянути відгук", false, () => _viewModel.CurrentScreen = "Profile")
-        );
         return r;
     }
 }
