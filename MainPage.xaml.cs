@@ -50,22 +50,42 @@ public partial class MainPage : ContentPage
         if (screenChanged)
         {
             TrackNavigation(screen);
+            if (screen == "MasterActivation")
+            {
+                StartMasterProfileEdit();
+            }
             _lastRenderedScreen = screen;
         }
-        HeaderHost.MaximumWidthRequest = 390;
         BodyHost.MaximumWidthRequest = 390;
-        HeaderHost.HorizontalOptions = LayoutOptions.Center;
+        HeaderHost.HorizontalOptions = LayoutOptions.Fill;
         BodyHost.HorizontalOptions = LayoutOptions.Center;
         BackgroundColor = ThemeColor("#FAFAF7", "#141A22");
         _fieldValidators.Clear();
         HeaderHost.Content = Header();
-        BodyHost.Content = new ScrollView
+        double previousScroll = screenChanged ? 0 : (BodyHost.Content as ScrollView)?.ScrollY ?? 0;
+        var body = new ScrollView
         {
             Content = Screen(),
             BackgroundColor = ThemeColor("#FAFAF7", "#141A22"),
             VerticalScrollBarVisibility = ScrollBarVisibility.Never,
         };
+        if (previousScroll > 0)
+        {
+            body.SizeChanged += RestoreScroll;
+        }
+        BodyHost.Content = body;
         NavigationHost.Content = Footer();
+
+        async void RestoreScroll(object? sender, EventArgs args)
+        {
+            if (body.Height <= 0)
+            {
+                return;
+            }
+
+            body.SizeChanged -= RestoreScroll;
+            await body.ScrollToAsync(0, previousScroll, false);
+        }
 
         if (screenChanged)
         {
@@ -111,21 +131,11 @@ public partial class MainPage : ContentPage
         };
         if (CanGoBack)
         {
-            var back = new Button
+            var back = HeaderIcon("back", "Назад", () =>
             {
-                Text = "←",
-                FontSize = 24,
-                WidthRequest = 48,
-                HeightRequest = 48,
-                Padding = 0,
-                Margin = new Thickness(0, 0, 8, 0),
-                CornerRadius = 12,
-                BackgroundColor = ThemeColor("#F1F2ED", "#2A3542"),
-                TextColor = ThemeColor("#202823", "#F4F7FB"),
-                VerticalOptions = LayoutOptions.Center,
-            };
-            SemanticProperties.SetDescription(back, "Назад");
-            BindButtonAction(back, () => GoBack());
+                GoBack();
+            });
+            back.Margin = new Thickness(0, 0, 8, 0);
             g.Add(back, 0, 0);
         }
         g.Add(new VerticalStackLayout { Spacing = 2, Children = { title, sub } }, 1, 0);
@@ -135,41 +145,32 @@ public partial class MainPage : ContentPage
             VerticalOptions = LayoutOptions.Center,
             HorizontalOptions = LayoutOptions.End,
         };
-        var themeButton = new Button
-        {
-            Text = IsDarkTheme ? "☀" : "☾",
-            FontFamily = "Inter",
-            FontSize = 21,
-            WidthRequest = 44,
-            HeightRequest = 44,
-            Padding = 0,
-            CornerRadius = 12,
-            BackgroundColor = ThemeColor("#F1F2ED", "#2A3542"),
-            TextColor = ThemeColor("#202823", "#F4F7FB"),
-            BorderWidth = 0,
-        };
-        Microsoft.Maui.Controls.SemanticProperties.SetDescription(
-            themeButton,
-            IsDarkTheme ? "Світла тема" : "Темна тема"
-        );
-        themeButton.Clicked += (_, _) => ToggleTheme();
-        actions.Add(themeButton);
-        actions.Add(
-            new ImageButton
-            {
-                Source = IsDarkTheme ? "dark_icon_bell.png" : "icon_bell.png",
-                WidthRequest = 44,
-                HeightRequest = 44,
-                BackgroundColor = Colors.Transparent,
-                Padding = 12,
-                Aspect = Aspect.AspectFit,
-                Command = new Command(() =>
-                    DisplayAlertAsync("Повідомлення", "Нових повідомлень поки немає.", "OK")
-                ),
-            }
-        );
+        actions.Add(HeaderIcon(IsDarkTheme ? "sun" : "moon",
+            IsDarkTheme ? "Світла тема" : "Темна тема", ToggleTheme));
+        actions.Add(HeaderIcon("bell", "Сповіщення", async () =>
+            await DisplayAlertAsync("Повідомлення", "Нових повідомлень поки немає.", "OK")));
         g.Add(actions, 2, 0);
         return g;
+    }
+
+    string Icon(string name, bool onAccent = false) =>
+        $"{(IsDarkTheme && !onAccent ? "dark_" : "")}icon_{name}.png";
+
+    ImageButton HeaderIcon(string icon, string description, Action action)
+    {
+        var button = new ImageButton
+        {
+            Source = Icon(icon),
+            WidthRequest = 44,
+            HeightRequest = 44,
+            Padding = 10,
+            BackgroundColor = ThemeColor("#F1F2ED", "#2A3542"),
+            CornerRadius = 12,
+            Aspect = Aspect.AspectFit,
+        };
+        SemanticProperties.SetDescription(button, description);
+        button.Clicked += (_, _) => action();
+        return button;
     }
 
     void ToggleTheme()
@@ -306,8 +307,22 @@ public partial class MainPage : ContentPage
         _viewModel.CurrentScreen switch
         {
             "NewRequest" => WorkflowFooter("Далі · адреса", () =>
-                _viewModel.CurrentScreen = "Address"
-            ),
+            {
+                string? error = _viewModel.DraftError;
+                if (error == null)
+                {
+                    _viewModel.CurrentScreen = "Address";
+                }
+                else if (_draftValidation != null)
+                {
+                    _draftValidation.Text = error;
+                    _draftValidation.IsVisible = true;
+                    if (BodyHost.Content is ScrollView scroll)
+                    {
+                        _ = scroll.ScrollToAsync(_draftValidation, ScrollToPosition.Center, false);
+                    }
+                }
+            }),
             "Address" => WorkflowFooter("Перевірити заявку", () =>
             {
                 if (_validateAddressSelection?.Invoke() == true && ValidateFields())
@@ -343,14 +358,14 @@ public partial class MainPage : ContentPage
         string[] labels = master
             ? new[] { "Доступні", "Мої роботи", "Чати", "Профіль" }
             : new[] { "Головна", "Заявки", "Чати", "Профіль" };
-        string[] icons = { "icon_home.png", "icon_request.png", "icon_chat.png", "icon_user.png" };
+        string[] icons = { "home", "request", "chat", "user" };
         string active = _viewModel.CurrentScreen switch
         {
             "Home" => master ? "Доступні" : "Головна",
             "Chat" => "Чати",
-            "Profile" or "Equipment" or "MasterActivation" => "Профіль",
+            "Profile" or "Equipment" or "EquipmentForm" or "MasterActivation" => "Профіль",
             "Orders" => master ? "Мої роботи" : "Заявки",
-            "AvailableRequests" or "MasterRequest" => master ? "Доступні" : "Заявки",
+            "AvailableRequests" or "MasterRequest" or "MasterFilters" => master ? "Доступні" : "Заявки",
             "Proposal" or "ProposalSent" or "MasterCompleted" => master ? "Мої роботи" : "Заявки",
             _ => "Заявки",
         };
@@ -393,7 +408,7 @@ public partial class MainPage : ContentPage
             stack.Add(
                 new Image
                 {
-                    Source = IsDarkTheme && !selected ? $"dark_{icons[i]}" : icons[i],
+                    Source = Icon(icons[i], selected),
                     WidthRequest = 24,
                     HeightRequest = 24,
                     HorizontalOptions = LayoutOptions.Center,

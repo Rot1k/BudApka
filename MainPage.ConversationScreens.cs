@@ -12,119 +12,38 @@ public partial class MainPage
             "Профіль, досвід і відгуки перед вибором. Усі дані демонстраційні."
         );
         var card = new VerticalStackLayout { Spacing = 8 };
-        card.Add(
-            new Border
+        card.Add(Body(master.Name, 20));
+        card.Add(Body(master.Specialty, 14));
+        if (master.Id == PrototypeViewModel.LocalMasterId)
+        {
+            if (!string.IsNullOrWhiteSpace(_viewModel.MasterAbout))
             {
-                WidthRequest = 68,
-                HeightRequest = 68,
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Content = new Image { Source = master.PhotoAsset, Aspect = Aspect.AspectFill },
+                card.Add(Body(_viewModel.MasterAbout));
             }
-        );
-        card.Add(
-            new Label
+            if (_viewModel.MasterPortfolioPhotoPath.Length > 0)
             {
-                Text = master.Name,
-                FontFamily = "Manrope",
-                FontSize = 18,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = ThemeColor("#202823", "#F4F7FB"),
+                card.Add(new Image
+                {
+                    Source = ImageSource.FromFile(_viewModel.MasterPortfolioPhotoPath),
+                    HeightRequest = 180,
+                    Aspect = Aspect.AspectFit,
+                });
             }
-        );
-        card.Add(Body(master.Specialty + " · Київ", 14));
-        card.Add(
-            new Border
+        }
+        else
+        {
+            card.Add(new Image
             {
-                BackgroundColor = Color.FromArgb(IsDarkTheme ? "#244D38" : "#EAF4ED"),
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                Padding = new Thickness(8, 6),
-                Content = Body("Є відгуки", 14),
-            }
-        );
-        card.Add(
-            Body("★ " + master.Rating + " · " + master.Reviews + " відгуків · приклад", 14, true)
-        );
-        card.Add(
-            new Label
-            {
-                Text = "Про майстра",
-                FontFamily = "Manrope",
-                FontSize = 16,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = ThemeColor("#202823", "#F4F7FB"),
-            }
-        );
-        card.Add(
-            Body(
-                "Допомагаю з ремонтом сантехніки: змішувачі, сифони, "
-                    + "підключення пральних машин. Приїжджаю вчасно, "
-                    + "погоджую вартість до початку робіт.",
-                13
-            )
-        );
-        card.Add(
-            new Label
-            {
-                Text = "Послуги",
-                FontFamily = "Manrope",
-                FontSize = 16,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = ThemeColor("#202823", "#F4F7FB"),
-            }
-        );
-        card.Add(
-            Body(
-                string.Join(
-                    Environment.NewLine,
-                    "Заміна змішувача — від 900 грн",
-                    "Підключення техніки — від 700 грн",
-                    "Діагностика та виїзд — від 300 грн"
-                ),
-                12,
-                true
-            )
-        );
-        card.Add(
-            new Label
-            {
-                Text = "Відгуки клієнтів",
-                FontFamily = "Manrope",
-                FontSize = 16,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = ThemeColor("#202823", "#F4F7FB"),
-            }
-        );
-        card.Add(
-            Body(
-                string.Join(
-                    " ",
-                    "«Швидко знайшов проблему, усе пояснив та залишив кухню чистою». ",
-                    "· Марія · ★ 5,0 · 12 листопада"
-                ),
-                13
-            )
-        );
+                Source = master.PhotoAsset,
+                HeightRequest = 90,
+                Aspect = Aspect.AspectFit,
+            });
+            card.Add(WithIcon("star", Body($"{master.Rating} · {master.Reviews} відгуків", 14, true)));
+            card.Add(Body($"Досвід · {master.Years} років", 14));
+        }
+        card.Add(Body(master.Message));
+        card.Add(Body(master.Price + " · довідкова ціна"));
         r.Add(Card(card));
-        r.Add(
-            new Label
-            {
-                Text = "Приклад роботи · заміна змішувача",
-                FontFamily = "Inter",
-                FontSize = 14,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = ThemeColor("#202823", "#F4F7FB"),
-            }
-        );
-        r.Add(
-            new Image
-            {
-                Source = "mixer_example.jpg",
-                HeightRequest = 180,
-                Aspect = Aspect.AspectFill,
-            }
-        );
         r.Add(
             CreateAsyncButton("Обрати " + master.Name.Split(' ')[0], true, () =>
                 ConfirmMasterAsync(master)
@@ -219,6 +138,7 @@ public partial class MainPage
         entry.Text = _viewModel.MessageDraft;
         SemanticProperties.SetDescription(entry, "Текст повідомлення");
         var send = ButtonStyle("Додати повідомлення", false);
+        send.ImageSource = Icon("send");
         send.IsEnabled = !string.IsNullOrWhiteSpace(entry.Text);
         var feedback = Body("", 14, true);
         feedback.IsVisible = false;
@@ -242,7 +162,7 @@ public partial class MainPage
         if (_viewModel.Mode == AccountMode.Client)
         {
             r.Add(CreateButton("Час візиту", true, () =>
-                _viewModel.CurrentScreen = "VisitDetails"));
+                _viewModel.CurrentScreen = "VisitDetails", "calendar"));
         }
         else if (_viewModel.Status == OrderStatus.VisitRecorded)
         {

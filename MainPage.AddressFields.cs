@@ -10,21 +10,27 @@ public partial class MainPage
 
     void AddAddressFields(VerticalStackLayout page)
     {
-        var region = AddressPicker("Оберіть регіон");
-        var city = AddressPicker("Оберіть населений пункт");
-        var citySearch = Field("Назва міста, селища або села", _ => { });
-        var status = Body("Завантажуємо довідник населених пунктів…", 14, true);
         var details = new VerticalStackLayout { Spacing = 8, IsEnabled = false };
         Entry? street = null;
         Entry? building = null;
-        bool updating = false;
-
-        page.Add(Body("Область або місто зі спеціальним статусом", 14));
-        page.Add(region);
-        page.Add(Body("Населений пункт", 14));
-        page.Add(citySearch);
-        page.Add(city);
-        page.Add(status);
+        var initial = new WorkArea(_viewModel.RegionCode, _viewModel.SettlementCode,
+            _viewModel.CityDistrictCode, _viewModel.District);
+        var controls = AddAreaFields(page, initial, area =>
+        {
+            bool changed = area.RegionCode != _viewModel.RegionCode
+                || area.SettlementCode != _viewModel.SettlementCode;
+            _viewModel.RegionCode = area.RegionCode;
+            _viewModel.SettlementCode = area.SettlementCode;
+            _viewModel.CityDistrictCode = area.DistrictCode;
+            _viewModel.District = area.DisplayName;
+            details.IsEnabled = area.SettlementCode.Length > 0;
+            if (changed && street != null && building != null)
+            {
+                street.Text = "";
+                building.Text = "";
+            }
+        }, requireSettlement: true);
+        _validateAddressSelection = controls.Validate;
 
         details.Add(LabeledField(
             "Вулиця", _viewModel.Street, "Почніть із назви вулиці",
@@ -46,29 +52,50 @@ public partial class MainPage
         if (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()
             || OperatingSystem.IsMacCatalyst())
         {
-            AddMapOptions(page, details, () => region.SelectedItem as AddressPlace,
-                () => city.SelectedItem as AddressPlace, () => street!, () => building!,
-                SelectMapPlace);
+            AddMapOptions(page, details, () => controls.Region.SelectedItem as AddressPlace,
+                () => controls.City.SelectedItem as AddressPlace, () => street!, () => building!,
+                controls.SelectMapPlace);
         }
+    }
 
-        _validateAddressSelection = () =>
-        {
-            if (region.SelectedItem is AddressPlace && city.SelectedItem is AddressPlace)
-            {
-                return true;
-            }
-
-            if (_addressDirectory != null)
-            {
-                status.Text = region.SelectedItem == null
-                    ? "Спочатку оберіть область." : "Оберіть населений пункт зі списку.";
-            }
-            if (BodyHost.Content is ScrollView scroll)
-            {
-                _ = scroll.ScrollToAsync(region, ScrollToPosition.Center, false);
-            }
-            return false;
-        };
+    (Picker Region, Picker City, Func<bool> Validate, Func<Placemark, bool> SelectMapPlace)
+        AddAreaFields(VerticalStackLayout page, WorkArea initial, Action<WorkArea> changed,
+            bool requireSettlement, string fixedRegionCode = "")
+    {
+        var region = AddressPicker("Оберіть регіон");
+        var city = AddressPicker(requireSettlement ? "Оберіть населений пункт"
+            : "Увесь регіон або населений пункт");
+        var citySearch = Field("Назва міста, селища або села", _ => { });
+        var district = AddressPicker("Увесь населений пункт");
+        var districtLabel = Body("Район міста · необов’язково", 14);
+        var status = Body("", 14, true);
+        var warning = Body("", 14);
+        warning.TextColor = ThemeColor("#9B201B", "#FFB4AB");
+        warning.IsVisible = false;
+        var blockedCity = CreateButton("Населений пункт · спочатку оберіть регіон", false,
+            () => ShowWarning("Спочатку оберіть регіон.", region));
+        blockedCity.BackgroundColor = ThemeColor("#E8ECE8", "#303B49");
+        var clearCity = CreateButton("Увесь регіон", false, () => city.SelectedItem = null);
+        var clearDistrict = CreateButton("Увесь населений пункт", false,
+            () => district.SelectedItem = null);
+        bool updating = false;
+        bool loaded = false;
+        bool loadingDirectory = false;
+        page.Add(Body("Область або місто зі спеціальним статусом", 14));
+        page.Add(region);
+        page.Add(warning);
+        page.Add(Body("Населений пункт", 14));
+        page.Add(blockedCity);
+        var searchRow = WithIcon("search", citySearch);
+        page.Add(searchRow);
+        page.Add(city);
+        page.Add(clearCity);
+        page.Add(districtLabel);
+        page.Add(district);
+        page.Add(clearDistrict);
+        page.Add(status);
+        region.IsEnabled = false;
+        RefreshVisibility();
 
         region.SelectedIndexChanged += (_, _) =>
         {
@@ -76,55 +103,189 @@ public partial class MainPage
             {
                 return;
             }
-            _viewModel.RegionCode = (region.SelectedItem as AddressPlace)?.Code ?? "";
-            _viewModel.SettlementCode = "";
-            _viewModel.District = "";
-            street!.Text = "";
-            building!.Text = "";
+            warning.IsVisible = false;
+            region.BackgroundColor = ThemeColor("#FFFFFF", "#202833");
+            updating = true;
             citySearch.Text = "";
-            RefreshCities();
+            updating = false;
+            RefreshCities("", "");
         };
-        citySearch.TextChanged += (_, _) => RefreshCities();
+        citySearch.TextChanged += (_, _) =>
+        {
+            if (!updating)
+            {
+                RefreshCities((city.SelectedItem as AddressPlace)?.Code ?? "",
+                    (district.SelectedItem as AddressPlace)?.Code ?? "");
+            }
+        };
         city.SelectedIndexChanged += (_, _) =>
         {
-            if (updating || city.SelectedItem is not AddressPlace selected
-                || region.SelectedItem is not AddressPlace selectedRegion)
+            if (!updating)
+            {
+                warning.IsVisible = false;
+                RefreshDistricts("");
+                Publish();
+            }
+        };
+        district.SelectedIndexChanged += (_, _) =>
+        {
+            if (!updating)
+            {
+                Publish();
+            }
+        };
+        var loading = WithIcon("loader", Body("Завантажуємо довідник…", 14, true));
+        var error = new VerticalStackLayout { Spacing = 8, IsVisible = false };
+        error.Add(StateBadge("Помилка", ThemeColor("#B33232", "#FFB4AB"),
+            ThemeColor("#FCEDED", "#542725")));
+        error.Add(Body("Не вдалося відкрити довідник населених пунктів.", 14));
+        error.Add(CreateAsyncButton("Повторити", false, LoadDirectoryAsync));
+        page.Add(loading);
+        page.Add(error);
+        page.Loaded += async (_, _) => await LoadDirectoryAsync();
+
+        async Task LoadDirectoryAsync()
+        {
+            if (loaded || loadingDirectory)
             {
                 return;
             }
 
-            if (selected.Code != _viewModel.SettlementCode)
-            {
-                street!.Text = "";
-                building!.Text = "";
-            }
-            _viewModel.SettlementCode = selected.Code;
-            _viewModel.District = selected.Name == selectedRegion.Name
-                ? selected.Name : $"{selected.DisplayName} · {selectedRegion.Name}";
-            details.IsEnabled = true;
+            loadingDirectory = true;
+            loading.IsVisible = true;
+            error.IsVisible = false;
             status.Text = "";
-        };
-        page.Loaded += async (_, _) =>
-        {
             try
             {
                 _addressDirectory ??= await UkrainianAddressDirectory.LoadAsync();
+                loaded = true;
                 updating = true;
                 region.ItemsSource = _addressDirectory.Regions;
-                region.SelectedItem = _addressDirectory.Regions
-                    .FirstOrDefault(item => item.Code == _viewModel.RegionCode);
-                region.IsEnabled = true;
+                region.SelectedItem = _addressDirectory.Regions.FirstOrDefault(
+                    item => item.Code == (fixedRegionCode.Length > 0 ? fixedRegionCode
+                        : initial.RegionCode));
+                region.IsEnabled = fixedRegionCode.Length == 0;
                 updating = false;
-                RefreshCities();
+                RefreshCities(initial.SettlementCode, initial.DistrictCode);
             }
             catch (IOException)
             {
-                status.Text = "Довідник недоступний. Поверніться назад і відкрийте адресу знову.";
+                error.IsVisible = true;
             }
-        };
-        region.IsEnabled = false;
-        city.IsEnabled = false;
-        citySearch.IsEnabled = false;
+            finally
+            {
+                loadingDirectory = false;
+                loading.IsVisible = false;
+            }
+        }
+
+        return (region, city, Validate, SelectMapPlace);
+
+        void ShowWarning(string message, Picker target)
+        {
+            warning.Text = message;
+            warning.IsVisible = true;
+            if (target == region)
+            {
+                region.BackgroundColor = ThemeColor("#FFE4E0", "#542725");
+            }
+            if (BodyHost.Content is ScrollView scroll)
+            {
+                _ = scroll.ScrollToAsync(target, ScrollToPosition.Center, false);
+            }
+        }
+
+        bool Validate()
+        {
+            if (!loaded)
+            {
+                return false;
+            }
+            if (region.SelectedItem == null)
+            {
+                ShowWarning("Спочатку оберіть регіон.", region);
+                return false;
+            }
+            if (requireSettlement && city.SelectedItem == null)
+            {
+                ShowWarning("Оберіть населений пункт зі списку.", city);
+                return false;
+            }
+            return true;
+        }
+
+        void RefreshVisibility()
+        {
+            bool hasRegion = region.SelectedItem != null;
+            blockedCity.IsVisible = !hasRegion;
+            searchRow.IsVisible = hasRegion;
+            city.IsVisible = hasRegion;
+            clearCity.IsVisible = !requireSettlement && city.SelectedItem != null;
+            bool hasDistricts = district.ItemsSource?.Count > 0;
+            districtLabel.IsVisible = hasDistricts;
+            district.IsVisible = hasDistricts;
+            clearDistrict.IsVisible = district.SelectedItem != null;
+        }
+
+        void RefreshCities(string cityCode, string districtCode)
+        {
+            updating = true;
+            if (_addressDirectory != null && region.SelectedItem is AddressPlace selected)
+            {
+                var settlements = _addressDirectory.Settlements[selected.Code];
+                var current = settlements.FirstOrDefault(item => item.Code == cityCode);
+                string query = (citySearch.Text ?? "").Trim();
+                var matches = settlements.Where(item =>
+                    item.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+                    .Take(81).ToList();
+                bool limited = matches.Count > 80;
+                if (limited)
+                {
+                    matches.RemoveAt(80);
+                }
+                if (current != null && !matches.Contains(current))
+                {
+                    matches.Insert(0, current);
+                }
+                city.ItemsSource = matches;
+                city.SelectedItem = current;
+                city.IsEnabled = matches.Count > 0;
+                status.Text = matches.Count == 0 ? "Нічого не знайдено. Уточніть назву."
+                    : limited ? "Введіть частину назви, щоб звузити список." : "";
+            }
+            else
+            {
+                city.ItemsSource = null;
+                city.SelectedItem = null;
+                status.Text = "";
+            }
+            updating = false;
+            RefreshDistricts(districtCode);
+            Publish();
+        }
+
+        void RefreshDistricts(string code)
+        {
+            updating = true;
+            var selectedCity = city.SelectedItem as AddressPlace;
+            var districts = selectedCity == null ? Array.Empty<AddressPlace>()
+                : _addressDirectory!.CityDistricts[selectedCity.Code].ToArray();
+            district.ItemsSource = districts;
+            district.SelectedItem = districts.FirstOrDefault(item => item.Code == code);
+            updating = false;
+        }
+
+        void Publish()
+        {
+            RefreshVisibility();
+            var selectedRegion = region.SelectedItem as AddressPlace;
+            var selectedCity = city.SelectedItem as AddressPlace;
+            var selectedDistrict = district.SelectedItem as AddressPlace;
+            var words = new[] { selectedCity?.DisplayName, selectedDistrict?.Name,
+                selectedRegion?.Name }.Where(word => !string.IsNullOrEmpty(word)).Distinct();
+            changed(new WorkArea(selectedRegion?.Code ?? "", selectedCity?.Code ?? "",
+                selectedDistrict?.Code ?? "", string.Join(" · ", words)));
+        }
 
         bool SelectMapPlace(Placemark place)
         {
@@ -133,61 +294,27 @@ public partial class MainPage
                 return false;
             }
 
-            var matches = _addressDirectory.Settlements
-                .SelectMany(group => group)
+            var matches = _addressDirectory.Settlements.SelectMany(group => group)
                 .Where(item => item.Name.Equals(place.Locality, StringComparison.OrdinalIgnoreCase))
                 .ToArray();
             var target = matches.Length == 1 ? matches[0] : matches.FirstOrDefault(item =>
-                item.RegionCode == (region.SelectedItem as AddressPlace)?.Code
-                && item.Code == (city.SelectedItem as AddressPlace)?.Code);
+                item.Code == (city.SelectedItem as AddressPlace)?.Code);
             if (target == null)
             {
                 return false;
             }
+            if ((city.SelectedItem as AddressPlace)?.Code == target.Code)
+            {
+                return true;
+            }
 
             region.SelectedItem = _addressDirectory.Regions
                 .First(item => item.Code == target.RegionCode);
-            citySearch.Text = target.Name;
-            city.SelectedItem = target;
-            return true;
-        }
-
-        void RefreshCities()
-        {
-            if (_addressDirectory == null || region.SelectedItem is not AddressPlace selected)
-            {
-                city.ItemsSource = null;
-                city.IsEnabled = false;
-                citySearch.IsEnabled = false;
-                details.IsEnabled = false;
-                status.Text = "Оберіть область, щоб побачити її населені пункти.";
-                return;
-            }
-
-            var settlements = _addressDirectory.Settlements[selected.Code];
-            var current = settlements.FirstOrDefault(item => item.Code == _viewModel.SettlementCode);
-            string query = (citySearch.Text ?? "").Trim();
-            var matches = settlements.Where(item =>
-                item.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase)).Take(81)
-                .ToList();
-            bool limited = matches.Count > 80;
-            if (limited)
-            {
-                matches.RemoveAt(80);
-            }
-            if (current != null && !matches.Contains(current))
-            {
-                matches.Insert(0, current);
-            }
             updating = true;
-            city.ItemsSource = matches;
-            city.SelectedItem = current;
+            citySearch.Text = target.Name;
             updating = false;
-            city.IsEnabled = matches.Count > 0;
-            citySearch.IsEnabled = true;
-            details.IsEnabled = current != null;
-            status.Text = matches.Count == 0 ? "Нічого не знайдено. Уточніть назву."
-                : limited ? "Введіть частину назви, щоб звузити список." : "";
+            RefreshCities(target.Code, "");
+            return true;
         }
     }
 

@@ -17,13 +17,13 @@ public partial class MainPage
         var choices = new VerticalStackLayout { Spacing = 8 };
         bool searching = false;
         details.Insert(1, CreateAsyncButton("Показати підказки вулиць", false,
-            () => FindAsync(false)));
+            () => FindAsync(false), "search"));
         details.Insert(2, Body(
             "Введіть частину назви й виберіть результат. Якщо вулиці немає, впишіть її вручну.",
             14, true));
         page.Add(feedback);
         page.Add(choices);
-        page.Add(CreateAsyncButton("Визначити адресу за геолокацією", false, () => FindAsync(true)));
+        page.Add(CreateAsyncButton("Визначити адресу за геолокацією", false, () => FindAsync(true), "pin"));
         street().TextChanged += (_, _) =>
         {
             choices.Children.Clear();

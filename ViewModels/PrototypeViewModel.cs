@@ -63,14 +63,34 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
             OnPropertyChanged();
         }
     }
-    public string Category { get; set; } = "Сантехніка";
-    public List<string> Categories { get; } =
-        new() { "Сантехніка", "Електрика", "Побутова техніка", "Інше" };
-    public List<string> Symptoms { get; } = new() { "Протікає вода" };
-    public string Description { get; set; } = "Підтікає змішувач на кухні. Новий уже придбано.";
+    public string CategoryId { get; private set; } = "";
+    public string OtherCategory { get; set; } = "";
+    public string Category => CategoryId == RepairCatalog.Other
+        ? OtherCategory.Trim() : RepairCatalog.Find(CategoryId)?.Name ?? "";
+    public HashSet<string> Symptoms { get; } = new(StringComparer.Ordinal);
+    public string Description { get; set; } = "";
+    public EquipmentRecord? DraftEquipment { get; set; }
+
+    public void SelectCategory(string id)
+    {
+        if (CategoryId == id)
+        {
+            return;
+        }
+
+        CategoryId = id;
+        Symptoms.Clear();
+    }
+
+    public string? DraftError => CategoryId.Length == 0 ? "Оберіть категорію ремонту."
+        : Category.Length == 0 ? "Вкажіть назву вашої категорії."
+        : Symptoms.Count == 0 && string.IsNullOrWhiteSpace(Description)
+            ? "Оберіть підказку або опишіть завдання своїми словами." : null;
+
     public string PhotoPath { get; set; } = "";
     public string RegionCode { get; set; } = "";
     public string SettlementCode { get; set; } = "";
+    public string CityDistrictCode { get; set; } = "";
     public string District { get; set; } = "";
     public string Street { get; set; } = "";
     public string Building { get; set; } = "";
@@ -83,11 +103,15 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
     public bool IsSignedIn { get; set; }
     public bool HasRequestDraft { get; set; }
     public bool HasOrder { get; private set; }
-    public string OrderCategory { get; private set; } = "";
+    public string OrderCategory => PublishedRequest?.Category ?? "";
+    public RepairRequest? PublishedRequest { get; private set; }
     public string OrderDistrict { get; private set; } = "";
     public string OrderAddress { get; private set; } = "";
     public string SavedAddress { get; private set; } = "";
+    public const string LocalMasterId = "local-master";
+    public bool IsLocalMasterSelected => SelectedMaster?.Id == LocalMasterId;
     public bool CanChat => SelectedMaster != null
+        && (Mode == AccountMode.Client || IsLocalMasterSelected)
         && Status is OrderStatus.MasterSelected or OrderStatus.VisitRecorded;
     public MasterOffer? PreviewedMaster { get; set; }
 
@@ -99,7 +123,19 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
             return;
         }
 
-        OrderCategory = Category;
+        if (DraftError != null || RegionCode.Length == 0 || SettlementCode.Length == 0)
+        {
+            return;
+        }
+
+        PublishedRequest = new RepairRequest(2048, CategoryId, Category, Category,
+            Description.Trim(), string.Join(", ", Symptoms), Budget.Trim(),
+            new WorkArea(RegionCode, SettlementCode, CityDistrictCode, District),
+            DraftEquipment, PhotoPath);
+        for (int index = 0; index < Offers.Count; index++)
+        {
+            Offers[index] = Offers[index] with { Specialty = Category };
+        }
         OrderDistrict = District.Trim();
         OrderAddress = ExactAddress.Trim();
         if (SaveAddress)
@@ -125,10 +161,12 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
         return true;
     }
     public OrderStatus Status { get; set; } = OrderStatus.Draft;
-    public string StatusText =>
-        Status switch
+    public string StatusText => OrderStatusLabel(Status);
+
+    public static string OrderStatusLabel(OrderStatus status) =>
+        status switch
         {
-            OrderStatus.Submitted => "Заявку надіслано",
+            OrderStatus.Submitted => "Нова",
             OrderStatus.HasResponses => "Є пропозиції",
             OrderStatus.MasterSelected => "Майстра обрано",
             OrderStatus.VisitRecorded => "Час записано",
@@ -136,6 +174,24 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
             OrderStatus.Cancelled => "Скасовано",
             _ => "Чернетка",
         };
+    public void SaveMasterProposal(RepairRequest request, bool sent)
+    {
+        string reply = MasterReply.Trim();
+        string price = MasterPrice.Trim();
+        MasterProposals[request.Id] = (reply, price, sent);
+        if (sent && request.Id == PublishedRequest?.Id
+            && Status is OrderStatus.Submitted or OrderStatus.HasResponses)
+        {
+            string name = string.IsNullOrWhiteSpace(ProfileName) ? "Майстер із цієї сесії"
+                : ProfileName.Trim();
+            var offer = new MasterOffer(LocalMasterId, name, request.Category, 0,
+                reply, price + " грн", "", "", "");
+            Offers.RemoveAll(existing => existing.Id == LocalMasterId);
+            Offers.Add(offer);
+            Status = OrderStatus.HasResponses;
+        }
+    }
+
     public List<MasterOffer> Offers { get; } =
         new()
         {
@@ -144,7 +200,7 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
                 "Олександр Коваль",
                 "Сантехнік",
                 8,
-                "Заміню змішувач і перевірю з'єднання.",
+                "Можу взятися за роботу й уточнити деталі.",
                 "1 200 грн",
                 "4,9",
                 "12",
@@ -179,9 +235,14 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
     public string MasterPrice { get; set; } = "1200";
     public string MasterPortfolioPhotoPath { get; set; } = "";
     public bool IsMasterProfileActive { get; set; }
-    public string MasterDistrict { get; set; } = "Центр";
+    public HashSet<string> MasterCategories { get; } = new(StringComparer.Ordinal);
+    public string MasterOtherCategory { get; set; } = "";
+    public WorkArea MasterArea { get; set; } = WorkArea.Empty;
+    public WorkArea MasterFilterArea { get; set; } = WorkArea.Empty;
+    public bool FilterMasterServices { get; set; }
+    public RepairRequest? ViewedRequest { get; set; }
+    public Dictionary<int, (string Reply, string Price, bool Sent)> MasterProposals { get; } = new();
     public string MasterAbout { get; set; } = "";
-    public bool ProposalSent { get; set; }
     public string EquipmentName { get; set; } = "";
     public string EquipmentType { get; set; } = "";
     public string EquipmentModel { get; set; } = "";
@@ -210,7 +271,10 @@ public sealed class PrototypeViewModel : INotifyPropertyChanged
         SelectedMaster = selectedMaster;
         Status = OrderStatus.MasterSelected;
         Messages.Clear();
-        Messages.Add(new("Добрий день! Можу приїхати завтра о 17:00.", "10:24", false));
+        if (!IsLocalMasterSelected)
+        {
+            Messages.Add(new("Добрий день! Можу приїхати завтра о 17:00.", "10:24", false));
+        }
         CurrentScreen = "Chat";
     }
 

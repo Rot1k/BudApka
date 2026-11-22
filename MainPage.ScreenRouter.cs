@@ -118,6 +118,8 @@ public partial class MainPage
             "MasterCompleted" => MasterCompleted(),
             "Equipment" => Equipment(),
             "EquipmentForm" => EquipmentForm(),
+            "AttachEquipment" => AttachEquipment(),
+            "MasterFilters" => MasterFilters(),
             _ => Home(),
         };
 }

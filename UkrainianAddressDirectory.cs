@@ -7,7 +7,8 @@ internal sealed record AddressPlace(string RegionCode, string Code, string Name,
 
 internal sealed record UkrainianAddressDirectory(
     AddressPlace[] Regions,
-    ILookup<string, AddressPlace> Settlements)
+    ILookup<string, AddressPlace> Settlements,
+    ILookup<string, AddressPlace> CityDistricts)
 {
     public static async Task<UkrainianAddressDirectory> LoadAsync()
     {
@@ -24,10 +25,24 @@ internal sealed record UkrainianAddressDirectory(
             }
         }
 
+        using var districtStream = await FileSystem
+            .OpenAppPackageFileAsync("UkrainianCityDistricts.txt").ConfigureAwait(false);
+        using var districtReader = new StreamReader(districtStream);
+        var districts = new List<AddressPlace>();
+        while (await districtReader.ReadLineAsync().ConfigureAwait(false) is { } districtLine)
+        {
+            string[] parts = districtLine.Split('\t');
+            if (parts.Length == 3)
+            {
+                districts.Add(new(parts[0], parts[1], parts[2], ""));
+            }
+        }
+
         return new(
             places.Where(place => place.RegionCode == place.Code).OrderBy(place => place.Name)
                 .ToArray(),
             places.Where(place => place.RegionCode != place.Code).OrderBy(place => place.Name)
-                .ToLookup(place => place.RegionCode));
+                .ToLookup(place => place.RegionCode),
+            districts.OrderBy(place => place.Name).ToLookup(place => place.RegionCode));
     }
 }

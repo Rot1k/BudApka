@@ -132,10 +132,18 @@ public partial class MainPage
                 card.Insert(card.Children.Count - 2, Body("Додаткова інформація", 14, true));
                 card.Insert(card.Children.Count - 2, Body(item.Notes));
             }
+            if (_equipmentReturnScreen == "NewRequest")
+            {
+                card.Add(CreateButton("Вибрати для заявки", true, () =>
+                {
+                    _equipmentToShare = item;
+                    _viewModel.CurrentScreen = "AttachEquipment";
+                }));
+            }
             r.Add(Card(card));
         }
         r.Add(
-            CreateButton("Додати техніку вручну", true, () => OpenEquipmentForm(null))
+            CreateButton("Додати техніку вручну", true, () => OpenEquipmentForm(null), "plus")
         );
         r.Add(
             Body(

@@ -42,7 +42,30 @@ public partial class MainPage
             : "Введіть суму в гривнях цілим числом більше нуля.";
     }
 
-    View SelectionRow(string title, bool selected, Action action)
+    View WithIcon(string icon, View content, bool onAccent = false)
+    {
+        var row = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+            },
+            ColumnSpacing = 8,
+        };
+        row.Add(new Image
+        {
+            Source = Icon(icon, onAccent),
+            WidthRequest = 24,
+            HeightRequest = 24,
+            VerticalOptions = LayoutOptions.Center,
+            InputTransparent = true,
+        });
+        row.Add(content, 1, 0);
+        return row;
+    }
+
+    View SelectionRow(string title, bool selected, Action action, string? icon = null)
     {
         var row = new Grid
         {
@@ -53,28 +76,29 @@ public partial class MainPage
             },
             ColumnSpacing = 12,
         };
-        row.Add(
-            new Label
+        var label = new Label
+        {
+            Text = title,
+            FontFamily = "Inter",
+            FontSize = 15,
+            TextColor = ThemeColor("#202823", "#F4F7FB"),
+            VerticalOptions = LayoutOptions.Center,
+        };
+        row.Add(icon == null ? label : WithIcon(icon, label));
+        if (selected)
+        {
+            row.Add(new Image
             {
-                Text = title,
-                FontFamily = "Inter",
-                FontSize = 15,
-                TextColor = ThemeColor("#202823", "#F4F7FB"),
+                Source = Icon("check"),
+                WidthRequest = 24,
+                HeightRequest = 24,
                 VerticalOptions = LayoutOptions.Center,
-            }
-        );
-        row.Add(
-            new Label
-            {
-                Text = selected ? "●" : "○",
-                FontSize = 20,
-                TextColor = selected
-                    ? ThemeColor("#202823", "#F4F7FB")
-                    : ThemeColor("#727D72", "#91A1B7"),
-                VerticalOptions = LayoutOptions.Center,
-            },
-            1
-        );
+            }, 1);
+        }
+        else
+        {
+            row.Add(Body("○", 20, true), 1);
+        }
         var border = new Border
         {
             BackgroundColor = ThemeColor(
@@ -230,16 +254,28 @@ public partial class MainPage
         return stack;
     }
 
-    Button CreateButton(string text, bool primary, Action action)
+    Button CreateButton(string text, bool primary, Action action, string? icon = null)
     {
         var button = ButtonStyle(text, primary);
+        if (icon != null)
+        {
+            button.ImageSource = Icon(icon, primary);
+            button.ContentLayout = new Button.ButtonContentLayout(
+                Button.ButtonContentLayout.ImagePosition.Left, 8);
+        }
         BindButtonAction(button, action);
         return button;
     }
 
-    Button CreateAsyncButton(string text, bool primary, Func<Task> action)
+    Button CreateAsyncButton(string text, bool primary, Func<Task> action, string? icon = null)
     {
         var button = ButtonStyle(text, primary);
+        if (icon != null)
+        {
+            button.ImageSource = Icon(icon, primary);
+            button.ContentLayout = new Button.ButtonContentLayout(
+                Button.ButtonContentLayout.ImagePosition.Left, 8);
+        }
         BindButtonAction(button, async () =>
         {
             button.IsEnabled = false;

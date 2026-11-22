@@ -51,7 +51,7 @@ public partial class MainPage
                 Body("ДОСТУПНО ЛИШЕ ОБРАНОМУ МАЙСТРУ", 14, true),
                 new Label
                 {
-                    Text = "Заміна змішувача",
+                    Text = _viewModel.OrderCategory,
                     FontFamily = "Manrope",
                     FontSize = 18,
                     FontAttributes = FontAttributes.Bold,
@@ -93,10 +93,10 @@ public partial class MainPage
                     Spacing = 8,
                     Children =
                     {
-                        Body("ЗАВЕРШЕНО", 14, true),
+                        StatusBadge(OrderStatus.Completed),
                         new Label
                         {
-                            Text = "Заміна змішувача",
+                            Text = _viewModel.OrderCategory,
                             FontFamily = "Manrope",
                             FontSize = 18,
                             FontAttributes = FontAttributes.Bold,
@@ -159,16 +159,22 @@ public partial class MainPage
     View Orders()
     {
         if (_viewModel.Mode == AccountMode.Master)
+        {
             return MasterJobs();
+        }
         var r = Root("Мої замовлення", "Поточний статус і наступна дія — в одному місці.");
-        if (_viewModel.HasOrder)
+        var filter = _clientOrdersFilter;
+        AddOrderFilters(r, filter);
+        bool visible = _viewModel.PublishedRequest is { } request
+            && filter.Matches(request.CategoryId, _viewModel.Status);
+        if (visible)
         {
             var current = new VerticalStackLayout
             {
                 Spacing = 8,
                 Children =
                 {
-                    Body(_viewModel.StatusText, 14),
+                    StatusBadge(_viewModel.Status),
                     new Label
                     {
                         Text = _viewModel.OrderCategory,
@@ -178,6 +184,7 @@ public partial class MainPage
                         TextColor = ThemeColor("#202823", "#F4F7FB"),
                     },
                     Body(_viewModel.OrderDistrict),
+                    Body(EquipmentSummary(_viewModel.PublishedRequest?.Equipment), 14),
                     Body(_viewModel.SelectedMaster?.Name ?? "Майстра ще не обрано"),
 
                 },
@@ -207,62 +214,15 @@ public partial class MainPage
                 r.Add(CreateAsyncButton("Скасувати замовлення", false, () =>
                     ChangeOrderStatusAsync(OrderStatus.Cancelled)));
             }
-            var done = new VerticalStackLayout
-            {
-                Spacing = 8,
-                Children =
-                {
-                    Body("ЗАВЕРШЕНО", 14, true),
-                    new Label
-                    {
-                        Text = "Підключення пральної машини",
-                        FontFamily = "Manrope",
-                        FontSize = 18,
-                        FontAttributes = FontAttributes.Bold,
-                        TextColor = ThemeColor("#202823", "#F4F7FB"),
-                    },
-                    Body("Демонстраційне попереднє замовлення."),
-                    Body("Відгук залишено · оцінка 5 із 5", 14, true),
-                },
-            };
-            r.Add(Card(done));
-            r.Add(
-                Body(
-                    string.Join(
-                        " ",
-                        "Статуси: надіслано → є відповіді → майстра обрано →",
-                        "час записано → завершено / скасовано."
-                    ),
-                    14,
-                    true
-                )
-            );
         }
-        else
+        if (!AddDemoHistory(r, filter) && !visible)
         {
-            r.Add(
-                Card(
-                    new VerticalStackLayout
-                    {
-                        Spacing = 8,
-                        Children =
-                        {
-                            new Label
-                            {
-                                Text = "Поки немає замовлень",
-                                FontFamily = "Manrope",
-                                FontSize = 18,
-                                FontAttributes = FontAttributes.Bold,
-                                TextColor = ThemeColor("#202823", "#F4F7FB"),
-                            },
-                            Body("Створіть заявку, щоб знайти майстра."),
-                        },
-                    }
-                )
-            );
-            r.Add(
-                CreateButton("Створити заявку", true, () => _viewModel.CurrentScreen = "NewRequest")
-            );
+            AddOrderEmptyState(r, filter);
+        }
+        if (!_viewModel.HasOrder)
+        {
+            r.Add(CreateButton("Створити заявку", true, () =>
+                _viewModel.CurrentScreen = "NewRequest", "plus"));
         }
         return r;
     }
@@ -299,31 +259,51 @@ public partial class MainPage
     View MasterJobs()
     {
         var r = Root("Мої роботи", "Замовлення, у яких клієнт обрав вас.");
-        if (_viewModel.SelectedMaster == null)
+        var filter = _masterOrdersFilter;
+        AddOrderFilters(r, filter);
+        bool visible = _viewModel.IsLocalMasterSelected
+            && _viewModel.PublishedRequest is { } request
+            && filter.Matches(request.CategoryId, _viewModel.Status);
+        if (visible)
         {
-            r.Add(Card(Body("Поки немає робіт, для яких клієнт обрав майстра.")));
+            AddCurrentMasterJob(r);
+        }
+        if (!AddDemoHistory(r, filter) && !visible)
+        {
+            AddOrderEmptyState(r, filter);
+        }
+        if (!_viewModel.IsLocalMasterSelected)
+        {
             r.Add(CreateButton("До доступних заявок", true, () =>
                 _viewModel.CurrentScreen = "AvailableRequests"));
-            return r;
         }
+        return r;
+    }
 
+    void AddCurrentMasterJob(VerticalStackLayout r)
+    {
         var current = new VerticalStackLayout
         {
             Spacing = 8,
             Children =
             {
-                Body(_viewModel.StatusText, 14, true),
+                StatusBadge(_viewModel.Status),
                 new Label
                 {
-                    Text = "Заміна змішувача",
+                    Text = _viewModel.OrderCategory,
                     FontFamily = "Manrope",
                     FontSize = 18,
                     FontAttributes = FontAttributes.Bold,
                     TextColor = ThemeColor("#202823", "#F4F7FB"),
                 },
                 Body(_viewModel.OrderDistrict),
+                Body(EquipmentSummary(_viewModel.PublishedRequest?.Equipment), 14),
             },
         };
+        if (_viewModel.Status is OrderStatus.MasterSelected or OrderStatus.VisitRecorded)
+        {
+            current.Add(Body("Точна адреса: " + _viewModel.OrderAddress));
+        }
         if (!string.IsNullOrEmpty(_viewModel.RecordedVisitText))
         {
             current.Add(Body(_viewModel.RecordedVisitText));
@@ -333,26 +313,41 @@ public partial class MainPage
         {
             r.Add(CreateButton("Відкрити чат", true, () => _viewModel.CurrentScreen = "Chat"));
         }
-        var done = new VerticalStackLayout
+    }
+
+    bool AddDemoHistory(VerticalStackLayout page, OrderFilter filter)
+    {
+        bool visible = false;
+        foreach (var (category, title, status) in new[]
         {
-            Spacing = 8,
-            Children =
+            ("appliances", "Підключення пральної машини", OrderStatus.Completed),
+            ("windows", "Регулювання вікна", OrderStatus.Cancelled),
+        })
+        {
+            if (filter.Matches(category, status))
             {
-                Body("ЗАВЕРШЕНО", 14, true),
-                new Label
-                {
-                    Text = "Підключення пральної машини",
-                    FontFamily = "Manrope",
-                    FontSize = 18,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = ThemeColor("#202823", "#F4F7FB"),
-                },
-                Body("Демонстраційне замовлення."),
-                Body("Відгук залишено · оцінка 5 із 5", 14, true),
-            },
-        };
-        r.Add(Card(done));
-        r.Add(Body("Статус змінюється після підтвердження клієнтом.", 14, true));
-        return r;
+                var content = new VerticalStackLayout { Spacing = 8 };
+                content.Add(StatusBadge(status));
+                content.Add(Body(title, 18));
+                content.Add(Body(RepairCatalog.Find(category)!.Name, 14, true));
+                content.Add(Body("Демонстраційне замовлення", 14, true));
+                page.Add(Card(content));
+                visible = true;
+            }
+        }
+        return visible;
+    }
+
+    void AddOrderEmptyState(VerticalStackLayout page, OrderFilter filter)
+    {
+        page.Add(Card(Body("За вибраними умовами замовлень немає.")));
+        if (filter.Scope == OrderScope.Active && !filter.HasCriteria)
+        {
+            page.Add(CreateButton("Показати історію", false, () =>
+            {
+                filter.Scope = OrderScope.History;
+                _viewModel.NotifyAll();
+            }, "clock"));
+        }
     }
 }

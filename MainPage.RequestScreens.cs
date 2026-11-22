@@ -4,7 +4,7 @@ namespace BudApka;
 
 public partial class MainPage
 {
-    readonly HashSet<string> _selectedSymptoms = new(StringComparer.Ordinal) { "Підтікає вода" };
+    Label? _draftValidation;
 
     View Home()
     {
@@ -108,27 +108,40 @@ public partial class MainPage
             "1 із 3 · Категорія й симптоми. Не знаєте точної назви — оберіть найближчий варіант."
         );
         _viewModel.HasRequestDraft = true;
-        var categories = new VerticalStackLayout { Spacing = 8 };
-        foreach (var category in _viewModel.Categories)
-            categories.Add(SelectionRow(category, _viewModel.Category == category, () =>
+        AddRepairCategories(r, id => _viewModel.CategoryId == id, id =>
+        {
+            _viewModel.SelectCategory(id);
+            _viewModel.NotifyAll();
+        });
+        if (_viewModel.CategoryId == RepairCatalog.Other)
+        {
+            r.Add(LabeledField("Назва категорії", _viewModel.OtherCategory,
+                "Наприклад, ремонт ролет", null, value => _viewModel.OtherCategory = value,
+                maxLength: 80));
+        }
+
+        var category = RepairCatalog.Find(_viewModel.CategoryId);
+        if (category is { Suggestions.Length: > 0 })
+        {
+            r.Add(Body(category.Planned ? "Які роботи потрібні?" : "Що ви помітили?", 14));
+            foreach (string suggestion in category.Suggestions)
+            {
+                r.Add(SelectionRow(suggestion, _viewModel.Symptoms.Contains(suggestion), () =>
                 {
-                    _viewModel.Category = category;
+                    if (!_viewModel.Symptoms.Add(suggestion))
+                    {
+                        _viewModel.Symptoms.Remove(suggestion);
+                    }
                     _viewModel.NotifyAll();
                 }));
-        r.Add(categories);
-        r.Add(Body("Які симптоми помітили?", 14));
-        foreach (var symptom in new[] { "Підтікає вода", "Слабкий напір" })
-            r.Add(SelectionRow(symptom, _selectedSymptoms.Contains(symptom), () =>
-                {
-                    if (!_selectedSymptoms.Add(symptom))
-                        _selectedSymptoms.Remove(symptom);
-                    _viewModel.NotifyAll();
-                }));
-        r.Add(Body("Опис · необов’язково", 14));
+            }
+        }
+
+        r.Add(Body("Опис своїми словами", 14));
         var description = new Editor
         {
             Text = _viewModel.Description,
-            Placeholder = "Опишіть, що сталося",
+            Placeholder = "Що потрібно зробити або що сталося?",
             FontFamily = "Inter",
             FontSize = 16,
             TextColor = ThemeColor("#202823", "#F4F7FB"),
@@ -149,53 +162,16 @@ public partial class MainPage
                 TextColor = ThemeColor("#202823", "#F4F7FB"),
             }
         );
-        var photoRow = new Grid
-        {
-            ColumnDefinitions = { new ColumnDefinition(68), new ColumnDefinition(GridLength.Star) },
-            ColumnSpacing = 10,
-        };
-        var preview = new Border
-        {
-            WidthRequest = 68,
-            HeightRequest = 68,
-            StrokeThickness = 0,
-            StrokeShape = new RoundRectangle { CornerRadius = 12 },
-            Content = new Image
-            {
-                Source = string.IsNullOrEmpty(_viewModel.PhotoPath)
-                    ? "mixer_example.jpg"
-                    : ImageSource.FromFile(_viewModel.PhotoPath),
-                Aspect = Aspect.AspectFill,
-            },
-        };
-        photoRow.Add(preview, 0, 0);
-        photoRow.Add(
-            new VerticalStackLayout
-            {
-                Spacing = 4,
-                VerticalOptions = LayoutOptions.Center,
-                Children =
-                {
-                    Body(
-                        string.IsNullOrEmpty(_viewModel.PhotoPath)
-                            ? "Приклад фото змішувача"
-                            : "Фото додано",
-                        14
-                    ),
-                    Body(
-                        string.IsNullOrEmpty(_viewModel.PhotoPath)
-                            ? "Фото до заявки ще не додано"
-                            : "Можна замінити або прибрати фото",
-                        14,
-                        true
-                    ),
-                },
-            },
-            1,
-            0
-        );
-        photo.Add(photoRow);
         bool hasPhoto = !string.IsNullOrEmpty(_viewModel.PhotoPath);
+        if (hasPhoto)
+        {
+            photo.Add(new Image
+            {
+                Source = ImageSource.FromFile(_viewModel.PhotoPath),
+                HeightRequest = 120,
+                Aspect = Aspect.AspectFit,
+            });
+        }
         photo.Add(CreateAsyncButton(hasPhoto ? "Замінити фото" : "Додати фото", false, async () =>
         {
             try
@@ -216,7 +192,7 @@ public partial class MainPage
                     "Перевірте доступ до фото або продовжте заявку без фото.",
                     "Готово");
             }
-        }));
+        }, "photo"));
         if (hasPhoto)
         {
             photo.Add(CreateButton("Прибрати фото", false, () =>
@@ -249,14 +225,27 @@ public partial class MainPage
                     FontAttributes = FontAttributes.Bold,
                     TextColor = ThemeColor("#202823", "#F4F7FB"),
                 },
-                Body("Можна продовжити без паспорта.", 14, true),
-                CreateButton("Переглянути збережену техніку", false, () =>
+                Body(EquipmentSummary(_viewModel.DraftEquipment), 14, true),
+                CreateButton(_viewModel.DraftEquipment == null ? "Прикріпити паспорт"
+                    : "Замінити паспорт", false, () =>
                 {
                     _equipmentReturnScreen = "NewRequest";
                     _viewModel.CurrentScreen = "Equipment";
                 }),
             },
         };
+        if (_viewModel.DraftEquipment != null)
+        {
+            equipment.Add(CreateButton("Від’єднати паспорт", false, () =>
+            {
+                _viewModel.DraftEquipment = null;
+                _viewModel.NotifyAll();
+            }));
+        }
+        _draftValidation = Body("", 14);
+        _draftValidation.TextColor = ThemeColor("#9B201B", "#FFB4AB");
+        _draftValidation.IsVisible = false;
+        r.Add(_draftValidation);
         r.Add(
             new Border
             {
@@ -351,8 +340,8 @@ public partial class MainPage
                     string.Join(
                         Environment.NewLine,
                         "Категорія: " + _viewModel.Category,
-                        "Симптоми: " + (_selectedSymptoms.Count == 0
-                            ? "не вибрано" : string.Join(", ", _selectedSymptoms)),
+                        "Ознаки або роботи: " + (_viewModel.Symptoms.Count == 0
+                            ? "не вибрано" : string.Join(", ", _viewModel.Symptoms)),
                         "Опис: " + (string.IsNullOrWhiteSpace(_viewModel.Description)
                             ? "не додано" : _viewModel.Description),
                         "Фото: " + (string.IsNullOrEmpty(_viewModel.PhotoPath)
@@ -386,7 +375,7 @@ public partial class MainPage
                         Body(
                             string.Join(
                                 " ",
-                                "До вибору майстри бачать лише населений пункт і область.",
+                                "До вибору майстри бачать місцевість без вулиці й номера будинку.",
                                 "Адресу не буде збережено без окремої згоди."
                             )
                         ),
@@ -394,17 +383,7 @@ public partial class MainPage
                 }
             )
         );
-        r.Add(
-            Body(
-                string.Join(
-                    " ",
-                    "Паспорт техніки не додано. Час ще не визначений.",
-                    "Платежі в застосунку не передбачені."
-                ),
-                14,
-                true
-            )
-        );
+        r.Add(Card(Body(EquipmentSummary(_viewModel.DraftEquipment), 14)));
         r.Add(
             CreateButton(_viewModel.IsSignedIn ? "Надіслати заявку" : "Увійти й надіслати",
                 true, () =>
@@ -487,7 +466,8 @@ public partial class MainPage
             Spacing = 8,
             Children =
             {
-                Body("ЗАЯВКА №2048", 14, true),
+                StatusBadge(_viewModel.Status),
+                Body("Заявка №2048", 14, true),
                 new Label
                 {
                     Text = _viewModel.OrderCategory,
@@ -590,9 +570,12 @@ public partial class MainPage
                     Content = Body("Є відгуки", 14, false),
                 }
             );
-            meta.Add(Body("★ " + offer.Rating + " · " + offer.Reviews + " відгуків", 14));
+            meta.Add(WithIcon("star", Body(offer.Rating + " · " + offer.Reviews + " відгуків", 14)));
             top.Add(meta, 1, 0);
-            card.Add(top);
+            if (offer.Id != PrototypeViewModel.LocalMasterId)
+            {
+                card.Add(top);
+            }
             card.Add(
                 new Label
                 {
@@ -603,7 +586,8 @@ public partial class MainPage
                     TextColor = ThemeColor("#202823", "#F4F7FB"),
                 }
             );
-            card.Add(Body($"{offer.Specialty} · {offer.Years} років досвіду"));
+            card.Add(Body(offer.Id == PrototypeViewModel.LocalMasterId ? offer.Specialty
+                : $"{offer.Specialty} · {offer.Years} років досвіду"));
             card.Add(Body(offer.Message, 14, true));
             card.Add(Body(offer.Price + " · довідкова ціна", 16));
             card.Add(CreateButton("Профіль і відгуки", false, () =>
