@@ -147,8 +147,22 @@ public partial class MainPage : ContentPage
         };
         actions.Add(HeaderIcon(IsDarkTheme ? "sun" : "moon",
             IsDarkTheme ? "Світла тема" : "Темна тема", ToggleTheme));
-        actions.Add(HeaderIcon("bell", "Сповіщення", async () =>
-            await DisplayAlertAsync("Повідомлення", "Нових повідомлень поки немає.", "OK")));
+        int unreadCount = _viewModel.UnreadNotificationCount;
+        string description = unreadCount > 0
+            ? $"Сповіщення, непрочитаних: {unreadCount}"
+            : "Сповіщення";
+        var notifications = HeaderIcon("bell", description, () =>
+        {
+            _viewModel.MarkNotificationsRead();
+            _viewModel.CurrentScreen = "Notifications";
+        });
+        if (unreadCount > 0)
+        {
+            notifications.Source = Icon("bell", onAccent: true);
+            notifications.BackgroundColor = ThemeColor("#FFB800", "#E3A600");
+        }
+
+        actions.Add(notifications);
         g.Add(actions, 2, 0);
         return g;
     }

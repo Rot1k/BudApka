@@ -106,6 +106,7 @@ public partial class MainPage
             "Responses" => Responses(),
             "MasterProfile" => MasterProfile(),
             "Chats" => Chats(),
+            "Notifications" => Notifications(),
             "Chat" => Chat(),
             "VisitDetails" => Visit(),
             "Completion" => Completion(),

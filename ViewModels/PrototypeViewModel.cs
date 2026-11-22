@@ -36,9 +36,16 @@ public sealed record ChatMessage(string Text, string Time, bool FromClient);
 
 public sealed record EquipmentRecord(string Name, string Type, string Model, string Notes = "");
 
+internal sealed record OrderNotification(
+    int RequestId, AccountMode Recipient, string Title, string Category)
+{
+    public bool IsRead { get; set; }
+}
+
 internal sealed class PrototypeViewModel : INotifyPropertyChanged
 {
     private readonly Dictionary<int, RepairOrder> _orders = new();
+    private readonly List<OrderNotification> _notifications = new();
     // The built-in sample requests use numbers 2051 and 2052.
     private int _nextRequestId = 2053;
 
@@ -111,6 +118,19 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
         _orders.Values.OrderByDescending(order => order.Request.Id);
     public RepairOrder? CurrentOrder { get; private set; }
 
+    public IEnumerable<OrderNotification> Notifications =>
+        _notifications.AsEnumerable().Reverse().Where(notification => notification.Recipient == Mode);
+
+    public int UnreadNotificationCount => Notifications.Count(notification => !notification.IsRead);
+
+    public void MarkNotificationsRead()
+    {
+        foreach (var notification in Notifications)
+        {
+            notification.IsRead = true;
+        }
+    }
+
     public RepairOrder? FindOrder(int requestId) => _orders.GetValueOrDefault(requestId);
 
     public void OpenOrder(RepairOrder order, string screen)
@@ -124,6 +144,14 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
     public bool CanChat(RepairOrder order) => order.SelectedMaster != null
         && (Mode == AccountMode.Client || order.IsLocalMasterSelected)
         && order.Status is OrderStatus.MasterSelected or OrderStatus.VisitRecorded;
+
+    public bool CanRespondInWorkArea(RepairOrder order) =>
+        Mode == AccountMode.Master && IsInMasterWorkArea(order.Request)
+        && order.Status is OrderStatus.Submitted or OrderStatus.HasResponses;
+
+    private bool IsInMasterWorkArea(RepairRequest request) =>
+        IsMasterProfileActive && MasterArea.RegionCode.Length > 0
+        && MasterArea.Includes(request.Area);
 
     public void SubmitRequest()
     {
@@ -141,6 +169,12 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
             DraftEquipment, PhotoPath);
         var order = new RepairOrder(request, ExactAddress);
         _orders.Add(request.Id, order);
+        if (IsInMasterWorkArea(request))
+        {
+            _notifications.Add(new(request.Id, AccountMode.Master,
+                "Нова заявка у вашій зоні роботи", request.Category));
+        }
+
         if (SaveAddress)
         {
             SavedAddress = $"{request.Area.DisplayName}, {order.ExactAddress}";
@@ -173,8 +207,17 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
             return false;
         }
 
-        order.Messages.Add(new(text, DateTime.Now.ToString("HH:mm"), Mode == AccountMode.Client));
+        bool fromClient = Mode == AccountMode.Client;
+        order.Messages.Add(new(text, DateTime.Now.ToString("HH:mm"), fromClient));
         order.SetMessageDraft(Mode, "");
+        if (order.IsLocalMasterSelected)
+        {
+            var recipient = fromClient ? AccountMode.Master : AccountMode.Client;
+            _notifications.Add(new(order.Request.Id, recipient,
+                fromClient ? "Нове повідомлення від клієнта" : "Нове повідомлення від майстра",
+                order.Request.Category));
+        }
+
         return true;
     }
 
@@ -210,6 +253,8 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
                 reply, price + " грн", "", "", "");
             order.Offers.Add(offer);
             order.Status = OrderStatus.HasResponses;
+            _notifications.Add(new(request.Id, AccountMode.Client,
+                $"{name} надіслав(-ла) пропозицію", request.Category));
         }
     }
 
@@ -262,7 +307,12 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
 
         order.SelectedMaster = selectedMaster;
         order.Status = OrderStatus.MasterSelected;
-        if (!order.IsLocalMasterSelected)
+        if (order.IsLocalMasterSelected)
+        {
+            _notifications.Add(new(order.Request.Id, AccountMode.Master,
+                "Клієнт обрав вас", order.Request.Category));
+        }
+        else
         {
             order.Messages.Add(new(
                 "Добрий день! Можу приїхати завтра о 17:00.", "10:24", false));
