@@ -147,6 +147,18 @@ public partial class MainPage
                 }
             );
         var entry = Field(placeholder, changed, keyboard, allowCharacter);
+        Color fieldBackground = entry.BackgroundColor;
+        entry.BackgroundColor = Colors.Transparent;
+#if WINDOWS
+        entry.HandlerChanged += (_, _) =>
+        {
+            if (entry.Handler?.PlatformView is Microsoft.UI.Xaml.Controls.TextBox textBox)
+            {
+                textBox.BorderThickness = new Microsoft.UI.Xaml.Thickness(0);
+
+            }
+        };
+#endif
         entry.MaxLength = maxLength;
         entry.Text = value;
         configureEntry?.Invoke(entry);
@@ -172,6 +184,7 @@ public partial class MainPage
         }
         var control = new Border
         {
+            BackgroundColor = fieldBackground,
             Stroke = ThemeColor("#727D72", "#91A1B7"),
             StrokeShape = new RoundRectangle { CornerRadius = 12 },
             Padding = new Thickness(12, 0),

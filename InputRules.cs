@@ -4,12 +4,12 @@ namespace BudApka;
 
 internal static class InputRules
 {
-    public const int PhoneTailLength = 9;
     public const string UkrainianPhonePrefix = "+380";
+    private const int PhoneTailLength = 9;
 
     public static bool Digit(char value) => char.IsAsciiDigit(value);
 
-    public static string GetPhoneTail(string value)
+    public static string FormatPhoneTail(string value)
     {
         if (value.StartsWith(UkrainianPhonePrefix, StringComparison.Ordinal))
         {
@@ -20,41 +20,47 @@ internal static class InputRules
             value = value[1..];
         }
 
-        return string.Concat(value.Where(Digit).Take(PhoneTailLength));
-    }
-
-    // A null replacement tells the native field to apply its edit unchanged.
-    public static string? FilterPhoneEdit(string current, string insertion, int start, int end)
-    {
-        if (insertion.Length == 0)
+        string digits = string.Concat(value.Where(Digit));
+        foreach (int boundary in new[] { 7, 5, 2 })
         {
-            return null;
-        }
-
-        bool replacesAll = start == 0 && end == current.Length;
-        if (replacesAll && TryNormalizePhone(insertion, out string normalized))
-        {
-            return normalized[UkrainianPhonePrefix.Length..];
-        }
-
-        int available = PhoneTailLength - (current.Length - (end - start));
-        if (insertion.All(Digit) && insertion.Length <= available
-            && (start != 0 || insertion[0] != '0'))
-        {
-            return null;
-        }
-
-        if (replacesAll && insertion.All(c => Digit(c) || IsPhoneSeparator(c)))
-        {
-            string digits = string.Concat(insertion.Where(Digit));
-            if (digits.Length == PhoneTailLength && digits[0] != '0')
+            if (digits.Length > boundary)
             {
-                return digits;
+                digits = digits.Insert(boundary, " ");
             }
         }
 
-        // Preserve a selection when an invalid replacement is rejected.
-        return current[start..end];
+        return digits;
+    }
+
+    public static bool IsPhoneDeletion(string previous, string input)
+    {
+        int removedLength = previous.Length - input.Length;
+        if (removedLength <= 0)
+        {
+            return false;
+        }
+
+        int start = 0;
+        while (start < input.Length && previous[start] == input[start])
+        {
+            start++;
+        }
+
+        return previous.AsSpan(start + removedLength).SequenceEqual(input.AsSpan(start));
+    }
+
+    public static bool TryReadPhoneTail(string value, out string digits)
+    {
+        if (TryNormalizePhone(value, out string normalized))
+        {
+            digits = normalized[UkrainianPhonePrefix.Length..];
+            return true;
+        }
+
+        digits = string.Concat(value.Where(Digit));
+        return value.All(c => Digit(c) || IsPhoneSeparator(c))
+            && digits.Length <= PhoneTailLength
+            && (digits.Length == 0 || digits[0] != '0');
     }
 
     public static bool NameCharacter(char value) =>
