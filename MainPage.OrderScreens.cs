@@ -298,6 +298,12 @@ public partial class MainPage
                 Body(EquipmentSummary(request.Equipment), 14),
             },
         };
+#if DEBUG
+        if (request.Title.StartsWith("Тест · ", StringComparison.Ordinal))
+        {
+            content.Add(Body(request.Title, 14, true));
+        }
+#endif
         bool client = mode == AccountMode.Client;
         if (client)
         {

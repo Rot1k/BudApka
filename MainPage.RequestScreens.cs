@@ -12,6 +12,13 @@ public partial class MainPage
             "Майстер для вашого дому",
             "Опишіть проблему своїми словами. Ви самі оберете, кому довірити ремонт."
         );
+#if DEBUG
+        if (!_viewModel.HasDebugData)
+        {
+            r.Add(CreateButton("Заповнити тестовими даними", false,
+                _viewModel.SeedDebugData, "tools"));
+        }
+#endif
         r.Add(CreateButton(
             _viewModel.HasRequestDraft ? "Продовжити заявку" : "Створити заявку",
             true,
