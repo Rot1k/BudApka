@@ -14,14 +14,12 @@ internal sealed class RepairOrder(RepairRequest request, string exactAddress)
 
     public List<MasterOffer> Offers { get; } =
     [
-        new(
-            "oleksandr", "Олександр Коваль", request.Category, 8,
-            "Можу взятися за роботу й уточнити деталі.", "1 200 грн", "4,9", "12",
-            "master_oleksandr.jpg"),
-        new(
-            "iryna", "Ірина Мельник", request.Category, 6,
-            "Вільна завтра після 17:00.", "1 400 грн", "4,9", "12", "master_iryna.jpg"),
+        new(PrototypeViewModel.DemoMasterId, "Олександр Коваль", request.Category, 8,
+            "Можу взятися за роботу й уточнити деталі.", "1 200 грн", "master_oleksandr.jpg"),
     ];
+    public bool MasterReportedCompletion { get; set; }
+    public ServiceInvitation? Invitation { get; set; }
+    public bool ServiceSelectionUnavailable { get; set; }
 
     public List<ChatMessage> Messages { get; } = new();
     public DateTime VisitDate { get; set; } = DateTime.Today.AddDays(2);

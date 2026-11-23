@@ -19,25 +19,49 @@ public partial class MainPage
     View ActivateMaster()
     {
         var r = Root(
-            "Почніть працювати майстром",
+            _viewModel.IsMasterProfileActive
+                ? "Налаштування профілю майстра" : "Почніть працювати майстром",
             "Окремий робочий профіль у вашому акаунті. Перевірка документів не проводиться."
         );
+        string nameDraft = _viewModel.ProfileName;
+        string phoneDraft = _viewModel.Phone;
+        if (!_viewModel.HasProfileContactDetails)
+        {
+            r.Add(Body("Вкажіть ім’я й телефон для спільного профілю.", 14));
+            r.Add(ProfileNameField(nameDraft, value => nameDraft = value, required: true));
+            r.Add(PhoneField(phoneDraft, value => phoneDraft = value, required: true));
+        }
+
         r.Add(Body("Категорії послуг", 14));
+        var categoryError = ValidationMessage();
+        categoryError.Text = "Оберіть хоча б одну категорію.";
+        r.Add(categoryError);
+        var categoryRows = new Dictionary<string, Action<bool>>();
+        var otherServices = LabeledField("Інші послуги", _masterOtherDraft,
+            "Опишіть, які ще роботи виконуєте", null, value => _masterOtherDraft = value,
+            validate: value => _masterCategoryDraft.Contains(RepairCatalog.Other)
+                ? Required(value, "Опишіть інші послуги.") : null,
+            maxLength: 120);
+        otherServices.IsVisible = _masterCategoryDraft.Contains(RepairCatalog.Other);
         AddRepairCategories(r, _masterCategoryDraft.Contains, id =>
         {
-            if (!_masterCategoryDraft.Add(id))
+            bool selected = _masterCategoryDraft.Add(id);
+            if (!selected)
             {
                 _masterCategoryDraft.Remove(id);
             }
-            _viewModel.NotifyAll();
-        });
-        if (_masterCategoryDraft.Contains(RepairCatalog.Other))
-        {
-            r.Add(LabeledField("Інші послуги", _masterOtherDraft,
-                "Опишіть, які ще роботи виконуєте", null,
-                value => _masterOtherDraft = value,
-                validate: value => Required(value, "Опишіть інші послуги."), maxLength: 120));
-        }
+
+            categoryRows[id](selected);
+            if (selected)
+            {
+                categoryError.IsVisible = false;
+            }
+            if (id == RepairCatalog.Other)
+            {
+                otherServices.IsVisible = selected;
+            }
+        }, categoryRows);
+        r.Add(otherServices);
 
         r.Add(Body("Зона роботи", 16));
         var controls = AddAreaFields(r, _masterAreaDraft, value => _masterAreaDraft = value,
@@ -71,25 +95,27 @@ public partial class MainPage
                 },
             },
         };
-        if (!string.IsNullOrEmpty(_viewModel.MasterPortfolioPhotoPath))
-            portfolio.Add(
-                new Image
-                {
-                    Source = ImageSource.FromFile(_viewModel.MasterPortfolioPhotoPath),
-                    HeightRequest = 120,
-                    Aspect = Aspect.AspectFill,
-                }
-            );
+        var photo = new Image { HeightRequest = 120, Aspect = Aspect.AspectFill };
+        UpdatePortfolioPhoto();
+        portfolio.Add(photo);
         portfolio.Add(CreateAsyncButton("Додати фото", false, async () =>
+        {
+            var files = await MediaPicker.Default.PickPhotosAsync();
+            var file = files.FirstOrDefault();
+            if (file != null)
             {
-                var files = await MediaPicker.Default.PickPhotosAsync();
-                var file = files.FirstOrDefault();
-                if (file != null)
-                {
-                    _viewModel.MasterPortfolioPhotoPath = file.FullPath;
-                    _viewModel.NotifyAll();
-                }
-            }, "camera"));
+                _viewModel.MasterPortfolioPhotoPath = file.FullPath;
+                UpdatePortfolioPhoto();
+            }
+        }, "camera"));
+
+        void UpdatePortfolioPhoto()
+        {
+            string path = _viewModel.MasterPortfolioPhotoPath;
+            photo.Source = path.Length > 0 ? ImageSource.FromFile(path) : null;
+            photo.IsVisible = path.Length > 0;
+        }
+
         portfolio.Add(Body("До 5 фото · JPG або PNG · до 10 МБ", 14, true));
         r.Add(
             new Border
@@ -102,17 +128,22 @@ public partial class MainPage
                 Content = portfolio,
             }
         );
-        r.Add(CreateAsyncButton(
+        r.Add(CreateButton(
             _viewModel.IsMasterProfileActive ? "Зберегти умови" : "Активувати профіль майстра",
-            true, async () =>
+            true, () =>
             {
-                if (_masterCategoryDraft.Count == 0)
+                if (!ValidateFields())
                 {
-                    await DisplayAlertAsync("Категорії послуг",
-                        "Оберіть хоча б одну категорію.", "Готово");
                     return;
                 }
-                if (!controls.Validate() || !ValidateFields())
+                if (_masterCategoryDraft.Count == 0)
+                {
+                    categoryError.IsVisible = true;
+                    ScrollToValidation(categoryError);
+                    return;
+                }
+                if (!controls.Validate()
+                    || !InputRules.TryNormalizePhone(phoneDraft, out string phone))
                 {
                     return;
                 }
@@ -125,6 +156,8 @@ public partial class MainPage
                 _viewModel.MasterCategories.Clear();
                 _viewModel.MasterCategories.UnionWith(_masterCategoryDraft);
                 _viewModel.MasterOtherCategory = _masterOtherDraft.Trim();
+                _viewModel.ProfileName = nameDraft.Trim();
+                _viewModel.Phone = phone;
                 _viewModel.IsMasterProfileActive = true;
                 _viewModel.SetMode(AccountMode.Master);
             }));
@@ -153,6 +186,10 @@ public partial class MainPage
             category.Id == RepairCatalog.Other ? _viewModel.MasterOtherCategory : category.Name);
         page.Add(Card(Body("Зона роботи: " + area.DisplayName + Environment.NewLine
             + "Послуги: " + string.Join(", ", categories))));
+        page.Add(CreateButton("Мої картки послуг", false, () =>
+            _viewModel.CurrentScreen = "MyServices", "tools"));
+        page.Add(CreateButton("Запрошення на роботи", false, () =>
+            _viewModel.CurrentScreen = "ServiceInvitations", "bell"));
         page.Add(CreateButton("Змінити умови", false, () =>
             _viewModel.CurrentScreen = "MasterActivation"));
         page.Add(CreateButton("Фільтри", false, () =>
@@ -189,6 +226,10 @@ public partial class MainPage
         {
             var card = new VerticalStackLayout { Spacing = 8 };
             card.Add(StatusBadge(AvailableStatus(request)));
+            if (_viewModel.FindOrder(request.Id) == null)
+            {
+                card.Add(Body("Демонстраційна заявка", 14, true));
+            }
             card.Add(Body($"№{request.Id} · {request.Category}", 14, true));
             card.Add(Body(request.Title));
             card.Add(Body(request.Area.DisplayName, 14));
@@ -307,6 +348,14 @@ public partial class MainPage
         }
         page.Add(Card(details));
         page.Add(Card(Body(EquipmentSummary(request.Equipment), 14)));
+        if (_viewModel.FindOrder(request.Id) is { } order
+            && PrototypeViewModel.HasPendingInvitation(order))
+        {
+            page.Add(CreateButton("Переглянути запрошення", true, () =>
+                _viewModel.CurrentScreen = "ServiceInvitations", "bell"));
+            return page;
+        }
+
         bool sent = _viewModel.MasterProposals.GetValueOrDefault(request.Id).Sent;
         string action = sent ? "Переглянути пропозицію" : "Надіслати пропозицію";
         page.Add(CreateButton(action, true, () =>
@@ -332,35 +381,12 @@ public partial class MainPage
                 validate: value => Required(value, "Напишіть коротку відповідь клієнту.")
             )
         );
-        var price = new VerticalStackLayout
-        {
-            Spacing = 8,
-            Children =
-            {
-                new Label
-                {
-                    Text = "Орієнтовна ціна, грн",
-                    FontFamily = "Inter",
-                    FontSize = 14,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = ThemeColor("#202823", "#F4F7FB"),
-                },
-            },
-        };
-        price.Add(
-            LabeledField(
-                "Ціна, грн",
-                _viewModel.MasterPrice,
-                "1 200",
-                "Довідковий текст без розрахунків і платежів.",
-                v => _viewModel.MasterPrice = v,
-                Keyboard.Numeric,
-                validate: ValidateAmount,
-                allowCharacter: c => InputRules.Digit(c) || c == ' ',
-                maxLength: 14
-            )
-        );
-        r.Add(price);
+        r.Add(LabeledField(
+            "Орієнтовна ціна · необов’язково", _viewModel.MasterPrice, "1 200",
+            "Вартість можна обговорити з клієнтом.",
+            value => _viewModel.MasterPrice = value,
+            Keyboard.Numeric, "грн", ValidateAmount,
+            allowCharacter: c => InputRules.Digit(c) || c == ' ', maxLength: 14));
         r.Add(
             Card(
                 new VerticalStackLayout
@@ -377,7 +403,7 @@ public partial class MainPage
                             TextColor = ThemeColor("#202823", "#F4F7FB"),
                         },
                         Body(
-                            "Ваш профіль, відгуки, відповідь і орієнтовну ціну. "
+                            "Ваш профіль, відгуки, відповідь і ціну, якщо ви її вкажете. "
                                 + "Точна адреса відкриється лише після вибору вас."
                         ),
                     },
@@ -429,7 +455,9 @@ public partial class MainPage
                             TextColor = ThemeColor("#202823", "#F4F7FB"),
                         },
                         Body(proposal.Reply),
-                        Body("Орієнтовна ціна: " + proposal.Price + " грн"),
+                        Body(string.IsNullOrWhiteSpace(proposal.Price)
+                            ? "Вартість можна обговорити з клієнтом."
+                            : "Орієнтовна ціна: " + proposal.Price + " грн"),
                         Body("Точна адреса відкриється після вибору майстра.", 14, true),
                     },
                 }

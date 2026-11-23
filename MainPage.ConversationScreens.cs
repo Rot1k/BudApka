@@ -11,7 +11,12 @@ public partial class MainPage
             return Orders();
         }
 
-        var master = order.PreviewedMaster ?? order.Offers[0];
+        var master = order.PreviewedMaster ?? order.Offers.LastOrDefault();
+        if (master == null)
+        {
+            return Responses();
+        }
+
         var r = Root(
             "Познайомтеся з майстром",
             "Профіль, досвід і відгуки перед вибором. Усі дані демонстраційні."
@@ -19,6 +24,7 @@ public partial class MainPage
         var card = new VerticalStackLayout { Spacing = 8 };
         card.Add(Body(master.Name, 20));
         card.Add(Body(master.Specialty, 14));
+        card.Add(MasterStatsView(master.Id));
         if (master.Id == PrototypeViewModel.LocalMasterId)
         {
             if (!string.IsNullOrWhiteSpace(_viewModel.MasterAbout))
@@ -37,17 +43,23 @@ public partial class MainPage
         }
         else
         {
-            card.Add(new Image
+            if (master.PhotoAsset.Length > 0)
             {
-                Source = master.PhotoAsset,
-                HeightRequest = 90,
-                Aspect = Aspect.AspectFit,
-            });
-            card.Add(WithIcon("star", Body($"{master.Rating} · {master.Reviews} відгуків", 14, true)));
+                card.Add(new Image
+                {
+                    Source = master.PhotoAsset,
+                    HeightRequest = 90,
+                    Aspect = Aspect.AspectFit,
+                });
+            }
+            card.Add(Body("Демонстраційний профіль", 14, true));
             card.Add(Body($"Досвід · {master.Years} років", 14));
         }
         card.Add(Body(master.Message));
-        card.Add(Body(master.Price + " · довідкова ціна"));
+        if (master.Price.Length > 0)
+        {
+            card.Add(Body(master.Price + " · довідкова ціна"));
+        }
         r.Add(Card(card));
         r.Add(
             CreateAsyncButton("Обрати " + master.Name.Split(' ')[0], true, () =>
@@ -140,15 +152,10 @@ public partial class MainPage
                             FontAttributes = FontAttributes.Bold,
                             TextColor = ThemeColor("#202823", "#F4F7FB"),
                         },
-                        Body(
-                            string.Join(
-                                Environment.NewLine,
-                                "Орієнтир майстра: "
-                                    + (order.SelectedMaster?.Price ?? "1 200 грн"),
-                                "Точна адреса: " + order.ExactAddress
-                            ),
-                            14
-                        ),
+                        Body(order.SelectedMaster is { Price.Length: > 0 } master
+                            ? $"Орієнтир майстра: {master.Price}{Environment.NewLine}"
+                                + "Точна адреса: " + order.ExactAddress
+                            : "Точна адреса: " + order.ExactAddress, 14),
                     },
                 }
             )

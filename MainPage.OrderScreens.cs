@@ -66,9 +66,12 @@ public partial class MainPage
                 },
                 Body(order.SelectedMaster?.Name ?? "Олександр Коваль"),
                 Body(order.ExactAddress),
-                Body("Орієнтир: " + (order.SelectedMaster?.Price ?? "1 200 грн")),
             },
         };
+        if (order.SelectedMaster is { Price.Length: > 0 } master)
+        {
+            details.Add(Body("Орієнтир: " + master.Price));
+        }
         r.Add(Card(details));
         r.Add(CreateButton("Зберегти деталі візиту", true, () =>
             {
@@ -124,20 +127,14 @@ public partial class MainPage
                 },
             }
         );
-        r.Add(
-            LabeledField(
-                "Оцінка",
-                order.Rating.ToString(),
-                "5 із 5",
-                "Оберіть оцінку від 1 до 5.",
-                v =>
-                {
-                    if (int.TryParse(v, out var value))
-                        order.Rating = Math.Clamp(value, 1, 5);
-                },
-                Keyboard.Numeric
-            )
-        );
+        string ratingDraft = order.Rating.ToString();
+        r.Add(LabeledField(
+            "Оцінка", ratingDraft, "5 із 5", "Оберіть оцінку від 1 до 5.",
+            value => ratingDraft = value,
+            Keyboard.Numeric,
+            validate: value => int.TryParse(value, out int rating) && rating is >= 1 and <= 5
+                ? null : "Вкажіть оцінку від 1 до 5.",
+            allowCharacter: InputRules.Digit, maxLength: 1));
         r.Add(Body("Відгук · необов’язково", 14));
         var review = new Editor
         {
@@ -159,6 +156,12 @@ public partial class MainPage
         }));
         r.Add(CreateButton("Зберегти відгук", true, () =>
         {
+            if (!ValidateFields() || !int.TryParse(ratingDraft, out int rating))
+            {
+                return;
+            }
+
+            order.Rating = rating;
             order.ReviewText = order.ReviewText.Trim();
             order.HasReview = true;
             _viewModel.CurrentScreen = "Orders";
@@ -204,7 +207,7 @@ public partial class MainPage
     {
         OrderStatus previous = order.Status;
         if (previous is OrderStatus.Completed or OrderStatus.Cancelled
-            || (next == OrderStatus.Completed && previous != OrderStatus.VisitRecorded))
+            || (next == OrderStatus.Completed && !CanConfirmCompletion(order)))
         {
             return;
         }
@@ -232,6 +235,22 @@ public partial class MainPage
             _viewModel.OpenOrder(order, "Completion");
         }
         else
+        {
+            _viewModel.NotifyAll();
+        }
+    }
+
+    static bool CanConfirmCompletion(RepairOrder order) =>
+        order.Status == OrderStatus.VisitRecorded
+        || (order.Status == OrderStatus.MasterSelected && order.MasterReportedCompletion);
+
+    async Task ReportWorkCompletedAsync(RepairOrder order)
+    {
+        bool confirmed = await DisplayAlertAsync("Роботу виконано?",
+            "Клієнт отримає сповіщення й зможе підтвердити завершення.",
+            "Повідомити клієнта", "Повернутися");
+        if (confirmed && _viewModel.CurrentScreen == "Orders"
+            && _viewModel.ReportWorkCompleted(order))
         {
             _viewModel.NotifyAll();
         }
@@ -283,6 +302,7 @@ public partial class MainPage
         if (client)
         {
             content.Add(Body(order.SelectedMaster?.Name ?? "Майстра ще не обрано"));
+            AddInvitationStatus(content, order);
         }
         else if (_viewModel.CanChat(order))
         {
@@ -315,9 +335,23 @@ public partial class MainPage
                 _viewModel.OpenOrder(order, "Chat"), "chat"));
         }
 
-        if (client && order.Status == OrderStatus.VisitRecorded)
+        if (order.Status is OrderStatus.MasterSelected or OrderStatus.VisitRecorded)
         {
-            content.Add(CreateAsyncButton("Позначити завершеним", true, () =>
+            if (order.MasterReportedCompletion)
+            {
+                content.Add(Body(client ? "Майстер повідомив, що роботу виконано."
+                    : "Ви позначили роботу виконаною. Очікуємо підтвердження клієнта.", 14));
+            }
+            else if (!client && order.IsLocalMasterSelected)
+            {
+                content.Add(CreateAsyncButton("Позначити роботу виконаною", true,
+                    () => ReportWorkCompletedAsync(order), "check"));
+            }
+        }
+
+        if (client && CanConfirmCompletion(order))
+        {
+            content.Add(CreateAsyncButton("Підтвердити завершення", true, () =>
                 ChangeOrderStatusAsync(order, OrderStatus.Completed)));
         }
 

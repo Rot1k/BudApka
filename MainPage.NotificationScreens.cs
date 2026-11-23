@@ -18,7 +18,17 @@ public partial class MainPage
             content.Add(Body(notification.Title, 16, true));
             content.Add(Body($"№{notification.RequestId} · {notification.Category}", 14));
             var order = _viewModel.FindOrder(notification.RequestId);
-            if (order != null && _viewModel.Mode == AccountMode.Client
+            if (order != null && notification.OpensServiceInvitations)
+            {
+                content.Add(CreateButton("Переглянути запрошення", false, () =>
+                    _viewModel.CurrentScreen = "ServiceInvitations", "bell"));
+            }
+            else if (order != null && notification.OpensOrders)
+            {
+                content.Add(CreateButton("Мої замовлення", false, () =>
+                    _viewModel.CurrentScreen = "Orders", "request"));
+            }
+            else if (order != null && _viewModel.Mode == AccountMode.Client
                 && order.Status == OrderStatus.HasResponses)
             {
                 content.Add(CreateButton("Переглянути відповіді", false, () =>

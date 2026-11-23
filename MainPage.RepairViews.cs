@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace BudApka;
 
 public partial class MainPage
@@ -5,7 +7,7 @@ public partial class MainPage
     EquipmentRecord? _equipmentToShare;
 
     void AddRepairCategories(VerticalStackLayout page, Func<string, bool> isSelected,
-        Action<string> select)
+        Action<string> select, Dictionary<string, Action<bool>>? selectionUpdates = null)
     {
         foreach (var group in RepairCatalog.Categories.GroupBy(category => category.Group))
         {
@@ -15,18 +17,37 @@ public partial class MainPage
             }
             foreach (var category in group)
             {
-                string? icon = category.Id switch
-                {
-                    "plumbing" => "water",
-                    "electrical" => "bolt",
-                    "appliances" => "appliance",
-                    "handyman" or "construction" => "tools",
-                    _ => null,
-                };
                 page.Add(SelectionRow(category.Name, isSelected(category.Id),
-                    () => select(category.Id), icon));
+                    () => select(category.Id), out var setSelected, RepairCategoryIcon(category.Id)));
+                selectionUpdates?.Add(category.Id, setSelected);
             }
         }
+    }
+
+    static string? RepairCategoryIcon(string id) => id switch
+    {
+        "plumbing" => "water",
+        "electrical" => "bolt",
+        "appliances" => "appliance",
+        "handyman" or "construction" => "tools",
+        _ => null,
+    };
+
+    View MasterStatsView(string masterId)
+    {
+        var stats = _viewModel.GetMasterStats(masterId);
+        string rating = stats.AverageRating is double average
+            ? $"Середня оцінка: {average.ToString("0.0", CultureInfo.GetCultureInfo("uk-UA"))} із 5"
+            : "Оцінок поки немає";
+        return new VerticalStackLayout
+        {
+            Spacing = 4,
+            Children =
+            {
+                WithIcon("star", Body(rating, 14)),
+                Body($"Виконані замовлення: {stats.CompletedOrders}", 14),
+            },
+        };
     }
 
     static string EquipmentSummary(EquipmentRecord? item)

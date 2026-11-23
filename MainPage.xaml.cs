@@ -322,19 +322,9 @@ public partial class MainPage : ContentPage
         {
             "NewRequest" => WorkflowFooter("Далі · адреса", () =>
             {
-                string? error = _viewModel.DraftError;
-                if (error == null)
+                if (_validateRequestDetails?.Invoke() == true)
                 {
                     _viewModel.CurrentScreen = "Address";
-                }
-                else if (_draftValidation != null)
-                {
-                    _draftValidation.Text = error;
-                    _draftValidation.IsVisible = true;
-                    if (BodyHost.Content is ScrollView scroll)
-                    {
-                        _ = scroll.ScrollToAsync(_draftValidation, ScrollToPosition.Center, false);
-                    }
                 }
             }),
             "Address" => WorkflowFooter("Перевірити заявку", () =>

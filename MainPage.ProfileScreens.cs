@@ -10,17 +10,22 @@ public partial class MainPage
     View Profile()
     {
         var r = Root("Профіль і адреси", "Один акаунт для замовлень і роботи майстром.");
+        if (_viewModel.IsMasterProfileActive)
+        {
+            r.Add(CreateButton("Налаштування профілю майстра", false, () =>
+                _viewModel.CurrentScreen = "MasterActivation", "tools"));
+        }
         string phoneDraft = _viewModel.Phone;
         string nameDraft = _viewModel.ProfileName;
-        r.Add(PhoneField(phoneDraft, value => phoneDraft = value, _viewModel.IsSignedIn));
-        r.Add(
-            LabeledField(
-                "Ім’я · необов’язково", nameDraft, "Олег", null, v => nameDraft = v,
-                validate: InputRules.ValidateName,
-                allowCharacter: InputRules.NameCharacter,
-                maxLength: 80
-            )
-        );
+        bool contactRequired = _viewModel.IsMasterProfileActive;
+        r.Add(PhoneField(phoneDraft, value => phoneDraft = value,
+            required: _viewModel.IsSignedIn || contactRequired));
+        r.Add(ProfileNameField(nameDraft, value => nameDraft = value, contactRequired));
+        if (_viewModel.IsMasterProfileActive)
+        {
+            r.Add(Body("Статистика майстра", 16));
+            r.Add(Card(MasterStatsView(PrototypeViewModel.LocalMasterId)));
+        }
         r.Add(
             Card(
                 new VerticalStackLayout
@@ -81,13 +86,19 @@ public partial class MainPage
             await DisplayAlertAsync(
                 "Профіль збережено", "Зміни доступні в цій демо-сесії.", "Готово");
         }));
-        r.Add(
-            CreateButton("Працювати майстром", false, () =>
-                _viewModel.CurrentScreen = "MasterActivation"
-            )
-        );
+        if (!_viewModel.IsMasterProfileActive)
+        {
+            r.Add(CreateButton("Працювати майстром", false, () =>
+                _viewModel.CurrentScreen = "MasterActivation"));
+        }
         return r;
     }
+
+    View ProfileNameField(string name, Action<string> changed, bool required) =>
+        LabeledField(required ? "Ім’я" : "Ім’я · необов’язково", name, "Олег", null, changed,
+            validate: value => (required ? Required(value, "Вкажіть ім’я.") : null)
+                ?? InputRules.ValidateName(value),
+            allowCharacter: InputRules.NameCharacter, maxLength: 80);
 
     View Equipment()
     {
