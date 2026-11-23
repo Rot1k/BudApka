@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'BudApka'
+                            and $([MSBuild]::IsOSPlatform('Windows'))
+                            and '$(LOCALAPPDATA)' != ''
+                            and '$(ArtifactsPath)' == ''
+                            and '$(UseArtifactsOutput)' == ''">
+    <!-- Keep build products out of Desktop folders monitored by sync clients. -->
+    <_BudApkaCheckoutHash>$([MSBuild]::StableStringHash('$(MSBuildProjectDirectory)'))</_BudApkaCheckoutHash>
+    <ArtifactsPath>$(LOCALAPPDATA)\BudApka\build\$(_BudApkaCheckoutHash)</ArtifactsPath>
+  </PropertyGroup>
+</Project>
