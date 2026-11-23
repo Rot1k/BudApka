@@ -4,7 +4,7 @@ namespace BudApka;
 
 public partial class MainPage
 {
-    Label? _draftValidation;
+    Func<bool>? _validateRequestDetails;
 
     View Home()
     {
@@ -12,6 +12,13 @@ public partial class MainPage
             "Майстер для вашого дому",
             "Опишіть проблему своїми словами. Ви самі оберете, кому довірити ремонт."
         );
+#if DEBUG
+        if (!_viewModel.HasDebugData)
+        {
+            r.Add(CreateButton("Заповнити тестовими даними", false,
+                _viewModel.SeedDebugData, "tools"));
+        }
+#endif
         r.Add(CreateButton(
             _viewModel.HasRequestDraft ? "Продовжити заявку" : "Створити заявку",
             true,
@@ -26,8 +33,13 @@ public partial class MainPage
 
         if (_viewModel.HasRequestDraft)
         {
-            r.Add(Body("Заповнені дані доступні в чернетці цієї сесії.", 14, true));
+            r.Add(CreateAsyncButton("Почати нову заявку", false,
+                () => ReplaceDraftAsync(startNew: true), "plus"));
+            r.Add(CreateAsyncButton("Видалити чернетку", false,
+                () => ReplaceDraftAsync(startNew: false)));
         }
+        r.Add(CreateButton("Знайти майстра", false, () =>
+            _viewModel.CurrentScreen = "ServiceCatalog", "search"));
         var how = new VerticalStackLayout { Spacing = 8 };
         how.Add(
             new Label
@@ -107,6 +119,30 @@ public partial class MainPage
         return r;
     }
 
+    async Task ReplaceDraftAsync(bool startNew, ServiceCard? service = null)
+    {
+        string title = startNew ? "Почати нову заявку?" : "Видалити чернетку?";
+        string message = startNew
+            ? "Поточну чернетку буде видалено, і відкриється нова заявка."
+            : "Дані цієї чернетки буде видалено.";
+        bool confirmed = await DisplayAlertAsync(title, message,
+            startNew ? "Почати нову" : "Видалити", "Скасувати");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        _viewModel.ClearRequestDraft();
+        if (startNew)
+        {
+            OpenNewRequest(service);
+        }
+        else
+        {
+            _viewModel.NotifyAll();
+        }
+    }
+
     View NewRequest()
     {
         var r = Root(
@@ -114,36 +150,47 @@ public partial class MainPage
             "1 із 3 · Категорія й симптоми. Не знаєте точної назви — оберіть найближчий варіант."
         );
         _viewModel.HasRequestDraft = true;
-        AddRepairCategories(r, id => _viewModel.CategoryId == id, id =>
+        var categoryRows = new Dictionary<string, Action<bool>>();
+        var categoryError = ValidationMessage();
+        var otherError = ValidationMessage();
+        var descriptionError = ValidationMessage();
+        var categoryDetails = new VerticalStackLayout { Spacing = r.Spacing };
+        r.Add(Body("Категорія ремонту", 18));
+        r.Add(categoryError);
+        var categoryList = new VerticalStackLayout { Spacing = r.Spacing };
+        var categorySummary = new VerticalStackLayout { Spacing = 8 };
+        r.Add(categorySummary);
+        r.Add(categoryList);
+        AddRepairCategories(categoryList, id => _viewModel.CategoryId == id, id =>
         {
-            _viewModel.SelectCategory(id);
-            _viewModel.NotifyAll();
-        });
-        if (_viewModel.CategoryId == RepairCatalog.Other)
-        {
-            r.Add(LabeledField("Назва категорії", _viewModel.OtherCategory,
-                "Наприклад, ремонт ролет", null, value => _viewModel.OtherCategory = value,
-                maxLength: 80));
-        }
-
-        var category = RepairCatalog.Find(_viewModel.CategoryId);
-        if (category is { Suggestions.Length: > 0 })
-        {
-            r.Add(Body(category.Planned ? "Які роботи потрібні?" : "Що ви помітили?", 14));
-            foreach (string suggestion in category.Suggestions)
+            string previousCategory = _viewModel.CategoryId;
+            if (previousCategory != id)
             {
-                r.Add(SelectionRow(suggestion, _viewModel.Symptoms.Contains(suggestion), () =>
+                _viewModel.SelectCategory(id);
+                if (categoryRows.TryGetValue(previousCategory, out var deselect))
                 {
-                    if (!_viewModel.Symptoms.Add(suggestion))
-                    {
-                        _viewModel.Symptoms.Remove(suggestion);
-                    }
-                    _viewModel.NotifyAll();
-                }));
+                    deselect(false);
+                }
+                categoryRows[id](true);
+                categoryError.IsVisible = false;
+                descriptionError.IsVisible = false;
+                UpdateCategoryDetails();
             }
-        }
 
-        r.Add(Body("Опис своїми словами", 14));
+            SetCategoryListExpanded(false);
+            if (BodyHost.Content is ScrollView scroll)
+            {
+                _ = scroll.ScrollToAsync(0, 0, false);
+            }
+        }, categoryRows);
+        SetCategoryListExpanded(_viewModel.CategoryId.Length == 0);
+        var problem = new VerticalStackLayout { Spacing = r.Spacing };
+        problem.Add(Body("Проблема або потрібні роботи", 18));
+        problem.Add(categoryDetails);
+        UpdateCategoryDetails();
+
+        problem.Add(Body("Опис своїми словами", 14));
+        problem.Add(descriptionError);
         var description = new Editor
         {
             Text = _viewModel.Description,
@@ -155,8 +202,16 @@ public partial class MainPage
             BackgroundColor = ThemeColor("#FFFFFF", "#202833"),
             HeightRequest = 92,
         };
-        description.TextChanged += (_, e) => _viewModel.Description = e.NewTextValue;
-        r.Add(description);
+        description.TextChanged += (_, e) =>
+        {
+            _viewModel.Description = e.NewTextValue;
+            if (!string.IsNullOrWhiteSpace(e.NewTextValue))
+            {
+                descriptionError.IsVisible = false;
+            }
+        };
+        problem.Add(description);
+        r.Add(Card(problem));
         var photo = new VerticalStackLayout { Spacing = 10 };
         photo.Add(
             new Label
@@ -184,7 +239,8 @@ public partial class MainPage
             {
                 var files = await MediaPicker.Default.PickPhotosAsync();
                 var file = files.FirstOrDefault();
-                if (file != null)
+                if (file != null && BodyHost.Content is ScrollView { Content: var content }
+                    && content == r)
                 {
                     _viewModel.PhotoPath = file.FullPath;
                     _viewModel.NotifyAll();
@@ -248,10 +304,6 @@ public partial class MainPage
                 _viewModel.NotifyAll();
             }));
         }
-        _draftValidation = Body("", 14);
-        _draftValidation.TextColor = ThemeColor("#9B201B", "#FFB4AB");
-        _draftValidation.IsVisible = false;
-        r.Add(_draftValidation);
         r.Add(
             new Border
             {
@@ -263,7 +315,86 @@ public partial class MainPage
                 Content = equipment,
             }
         );
+        _validateRequestDetails = ValidateRequestDetails;
         return r;
+
+        void SetCategoryListExpanded(bool expanded)
+        {
+            categorySummary.Children.Clear();
+            if (!expanded && RepairCatalog.Find(_viewModel.CategoryId) is { } category)
+            {
+                categorySummary.Add(SelectionRow(category.Name, true,
+                    () => SetCategoryListExpanded(true), RepairCategoryIcon(category.Id) ?? "tools"));
+                categorySummary.Add(CreateButton("Змінити категорію", false,
+                    () => SetCategoryListExpanded(true)));
+            }
+            categorySummary.IsVisible = !expanded;
+            categoryList.IsVisible = expanded;
+        }
+
+        void UpdateCategoryDetails()
+        {
+            categoryDetails.Children.Clear();
+            otherError.IsVisible = false;
+            if (_viewModel.CategoryId == RepairCatalog.Other)
+            {
+                categoryDetails.Add(LabeledField("Назва категорії", _viewModel.OtherCategory,
+                    "Наприклад, ремонт ролет", null, value =>
+                    {
+                        _viewModel.OtherCategory = value;
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            otherError.IsVisible = false;
+                        }
+                    }, maxLength: 80));
+                categoryDetails.Add(otherError);
+            }
+
+            var category = RepairCatalog.Find(_viewModel.CategoryId);
+            if (category is not { Suggestions.Length: > 0 })
+            {
+                categoryDetails.IsVisible = categoryDetails.Children.Count > 0;
+                return;
+            }
+
+            categoryDetails.IsVisible = true;
+            categoryDetails.Add(Body(
+                category.Planned ? "Які роботи потрібні?" : "Що ви помітили?", 14));
+            foreach (string suggestion in category.Suggestions)
+            {
+                Action<bool> updateSelection = _ => { };
+                categoryDetails.Add(SelectionRow(suggestion,
+                    _viewModel.Symptoms.Contains(suggestion), () =>
+                    {
+                        bool selected = _viewModel.Symptoms.Add(suggestion);
+                        if (!selected)
+                        {
+                            _viewModel.Symptoms.Remove(suggestion);
+                        }
+                        updateSelection(selected);
+                        if (selected)
+                        {
+                            descriptionError.IsVisible = false;
+                        }
+                    }, out updateSelection));
+            }
+        }
+
+        bool ValidateRequestDetails()
+        {
+            string? error = _viewModel.DraftError;
+            if (error == null)
+            {
+                return true;
+            }
+
+            Label target = _viewModel.CategoryId.Length == 0 ? categoryError
+                : _viewModel.Category.Length == 0 ? otherError : descriptionError;
+            target.Text = error;
+            target.IsVisible = true;
+            ScrollToValidation(target);
+            return false;
+        }
     }
 
     View Address()
@@ -298,7 +429,7 @@ public partial class MainPage
                 v => _viewModel.Budget = v,
                 Keyboard.Numeric,
                 "грн",
-                v => string.IsNullOrWhiteSpace(v) ? null : ValidateAmount(v),
+                ValidateAmount,
                 allowCharacter: c => InputRules.Digit(c) || c == ' ',
                 maxLength: 14
             )
@@ -363,6 +494,11 @@ public partial class MainPage
             },
         };
         r.Add(Card(draft));
+        if (_viewModel.DraftServiceId != null)
+        {
+            r.Add(Body("Якщо вибрана послуга відповідає категорії та адресі, "
+                + "майстер отримає запрошення після публікації заявки.", 14));
+        }
         r.Add(
             Card(
                 new VerticalStackLayout
@@ -528,6 +664,7 @@ public partial class MainPage
                 }
             )
         );
+        AddServiceRecommendations(r, order);
         r.Add(
             CreateButton("Переглянути мої замовлення", true, () =>
                 _viewModel.CurrentScreen = "Orders"
@@ -547,50 +684,32 @@ public partial class MainPage
             "Оберіть свого майстра",
             $"Заявка №{order.Request.Id} · Чат відкриється після вашого вибору."
         );
-        foreach (var offer in order.Offers)
+        AddServiceRecommendations(r, order);
+        if (order.Offers.Count == 0)
+        {
+            r.Add(Card(Body("Пропозицій поки немає.")));
+        }
+        else
+        {
+            r.Add(Body("Порядок пропозицій: спочатку найновіші.", 14, true));
+        }
+        foreach (var offer in order.Offers.AsEnumerable().Reverse())
         {
             var card = new VerticalStackLayout { Spacing = 12 };
-            var top = new Grid
-            {
-                ColumnDefinitions =
-                {
-                    new ColumnDefinition(72),
-                    new ColumnDefinition(GridLength.Star),
-                },
-                ColumnSpacing = 12,
-            };
-            top.Add(
-                new Border
-                {
-                    WidthRequest = 72,
-                    HeightRequest = 72,
-                    StrokeThickness = 0,
-                    StrokeShape = new RoundRectangle { CornerRadius = 16 },
-                    Content = new Image { Source = offer.PhotoAsset, Aspect = Aspect.AspectFill },
-                },
-                0,
-                0
-            );
-            var meta = new VerticalStackLayout
-            {
-                Spacing = 8,
-                VerticalOptions = LayoutOptions.Center,
-            };
-            meta.Add(
-                new Border
-                {
-                    BackgroundColor = Color.FromArgb(IsDarkTheme ? "#244D38" : "#EAF4ED"),
-                    StrokeThickness = 0,
-                    StrokeShape = new RoundRectangle { CornerRadius = 12 },
-                    Padding = new Thickness(8, 6),
-                    Content = Body("Є відгуки", 14, false),
-                }
-            );
-            meta.Add(WithIcon("star", Body(offer.Rating + " · " + offer.Reviews + " відгуків", 14)));
-            top.Add(meta, 1, 0);
             if (offer.Id != PrototypeViewModel.LocalMasterId)
             {
-                card.Add(top);
+                card.Add(Body("Демонстраційна пропозиція", 14, true));
+            }
+            if (offer.PhotoAsset.Length > 0)
+            {
+                card.Add(new Image
+                {
+                    Source = offer.PhotoAsset,
+                    WidthRequest = 72,
+                    HeightRequest = 72,
+                    HorizontalOptions = LayoutOptions.Start,
+                    Aspect = Aspect.AspectFill,
+                });
             }
             card.Add(
                 new Label
@@ -604,8 +723,12 @@ public partial class MainPage
             );
             card.Add(Body(offer.Id == PrototypeViewModel.LocalMasterId ? offer.Specialty
                 : $"{offer.Specialty} · {offer.Years} років досвіду"));
+            card.Add(MasterStatsView(offer.Id));
             card.Add(Body(offer.Message, 14, true));
-            card.Add(Body(offer.Price + " · довідкова ціна", 16));
+            if (offer.Price.Length > 0)
+            {
+                card.Add(Body(offer.Price + " · довідкова ціна", 16));
+            }
             card.Add(CreateButton("Профіль і відгуки", false, () =>
                 {
                     order.PreviewedMaster = offer;

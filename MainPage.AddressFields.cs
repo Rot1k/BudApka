@@ -10,20 +10,32 @@ public partial class MainPage
 
     void AddAddressFields(VerticalStackLayout page)
     {
-        var details = new VerticalStackLayout { Spacing = 8, IsEnabled = false };
+        var locationOptions = new VerticalStackLayout { Spacing = 8 };
+        page.Add(locationOptions);
+        var streetOptions = new VerticalStackLayout { Spacing = 8 };
+        var details = new VerticalStackLayout { Spacing = 8, IsVisible = false };
+        var streetHint = Body("Щоб вказати вулицю, спочатку оберіть населений пункт.",
+            14, true);
         Entry? street = null;
         Entry? building = null;
         var initial = new WorkArea(_viewModel.RegionCode, _viewModel.SettlementCode,
             _viewModel.CityDistrictCode, _viewModel.District);
         var controls = AddAreaFields(page, initial, area =>
         {
+            if (BodyHost.Content is not ScrollView scroll || scroll.Content != page)
+            {
+                return;
+            }
+
             bool changed = area.RegionCode != _viewModel.RegionCode
                 || area.SettlementCode != _viewModel.SettlementCode;
             _viewModel.RegionCode = area.RegionCode;
             _viewModel.SettlementCode = area.SettlementCode;
             _viewModel.CityDistrictCode = area.DistrictCode;
             _viewModel.District = area.DisplayName;
-            details.IsEnabled = area.SettlementCode.Length > 0;
+            bool hasSettlement = area.SettlementCode.Length > 0;
+            details.IsVisible = hasSettlement;
+            streetHint.IsVisible = !hasSettlement;
             if (changed && street != null && building != null)
             {
                 street.Text = "";
@@ -39,6 +51,7 @@ public partial class MainPage
             validate: ValidateStreet,
             allowCharacter: c => InputRules.AddressCharacter(c) && c != ',',
             maxLength: 100, configureEntry: entry => street = entry));
+        details.Add(streetOptions);
         details.Add(LabeledField(
             "Номер будинку · необов’язково", _viewModel.Building, "Наприклад, 12А",
             "Номер квартири можна повідомити майстру після узгодження часу візиту.",
@@ -47,18 +60,19 @@ public partial class MainPage
                 ? null : "Вкажіть лише номер будинку, наприклад 12А або 12/1.",
             allowCharacter: c => char.IsLetter(c) || InputRules.Digit(c) || c is '/' or '-',
             maxLength: 16, configureEntry: entry => building = entry));
+        page.Add(streetHint);
         page.Add(details);
 
         if (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()
             || OperatingSystem.IsMacCatalyst())
         {
-            AddMapOptions(page, details, () => controls.Region.SelectedItem as AddressPlace,
+            AddMapOptions(page, locationOptions, streetOptions, () => controls.Region.SelectedItem as AddressPlace,
                 () => controls.City.SelectedItem as AddressPlace, () => street!, () => building!,
                 controls.SelectMapPlace);
         }
     }
 
-    (Picker Region, Picker City, Func<bool> Validate, Func<Placemark, bool> SelectMapPlace)
+    (Picker Region, Picker City, Func<bool> Validate, Func<Placemark, Task<bool>> SelectMapPlace)
         AddAreaFields(VerticalStackLayout page, WorkArea initial, Action<WorkArea> changed,
             bool requireSettlement, string fixedRegionCode = "")
     {
@@ -69,26 +83,25 @@ public partial class MainPage
         var district = AddressPicker("Увесь населений пункт");
         var districtLabel = Body("Район міста · необов’язково", 14);
         var status = Body("", 14, true);
-        var warning = Body("", 14);
-        warning.TextColor = ThemeColor("#9B201B", "#FFB4AB");
-        warning.IsVisible = false;
-        var blockedCity = CreateButton("Населений пункт · спочатку оберіть регіон", false,
-            () => ShowWarning("Спочатку оберіть регіон.", region));
-        blockedCity.BackgroundColor = ThemeColor("#E8ECE8", "#303B49");
+        var regionWarning = ValidationMessage();
+        var cityWarning = ValidationMessage();
+        var cityHint = Body("Спочатку оберіть область або місто зі спеціальним статусом.",
+            14, true);
         var clearCity = CreateButton("Увесь регіон", false, () => city.SelectedItem = null);
         var clearDistrict = CreateButton("Увесь населений пункт", false,
             () => district.SelectedItem = null);
         bool updating = false;
         bool loaded = false;
-        bool loadingDirectory = false;
+        Task? directoryLoad = null;
         page.Add(Body("Область або місто зі спеціальним статусом", 14));
         page.Add(region);
-        page.Add(warning);
+        page.Add(regionWarning);
         page.Add(Body("Населений пункт", 14));
-        page.Add(blockedCity);
+        page.Add(cityHint);
         var searchRow = WithIcon("search", citySearch);
         page.Add(searchRow);
         page.Add(city);
+        page.Add(cityWarning);
         page.Add(clearCity);
         page.Add(districtLabel);
         page.Add(district);
@@ -103,7 +116,8 @@ public partial class MainPage
             {
                 return;
             }
-            warning.IsVisible = false;
+            regionWarning.IsVisible = false;
+            cityWarning.IsVisible = false;
             region.BackgroundColor = ThemeColor("#FFFFFF", "#202833");
             updating = true;
             citySearch.Text = "";
@@ -122,7 +136,7 @@ public partial class MainPage
         {
             if (!updating)
             {
-                warning.IsVisible = false;
+                cityWarning.IsVisible = false;
                 RefreshDistricts("");
                 Publish();
             }
@@ -144,14 +158,24 @@ public partial class MainPage
         page.Add(error);
         page.Loaded += async (_, _) => await LoadDirectoryAsync();
 
-        async Task LoadDirectoryAsync()
+        Task LoadDirectoryAsync()
         {
-            if (loaded || loadingDirectory)
+            if (loaded)
             {
-                return;
+                return Task.CompletedTask;
             }
 
-            loadingDirectory = true;
+            if (directoryLoad is { IsCompleted: false })
+            {
+                return directoryLoad;
+            }
+
+            directoryLoad = LoadDirectoryCoreAsync();
+            return directoryLoad;
+        }
+
+        async Task LoadDirectoryCoreAsync()
+        {
             loading.IsVisible = true;
             error.IsVisible = false;
             status.Text = "";
@@ -174,7 +198,6 @@ public partial class MainPage
             }
             finally
             {
-                loadingDirectory = false;
                 loading.IsVisible = false;
             }
         }
@@ -183,22 +206,21 @@ public partial class MainPage
 
         void ShowWarning(string message, Picker target)
         {
+            var warning = target == region ? regionWarning : cityWarning;
             warning.Text = message;
             warning.IsVisible = true;
             if (target == region)
             {
                 region.BackgroundColor = ThemeColor("#FFE4E0", "#542725");
             }
-            if (BodyHost.Content is ScrollView scroll)
-            {
-                _ = scroll.ScrollToAsync(target, ScrollToPosition.Center, false);
-            }
+            ScrollToValidation(warning);
         }
 
         bool Validate()
         {
             if (!loaded)
             {
+                ScrollToValidation(loading.IsVisible ? loading : error);
                 return false;
             }
             if (region.SelectedItem == null)
@@ -217,7 +239,7 @@ public partial class MainPage
         void RefreshVisibility()
         {
             bool hasRegion = region.SelectedItem != null;
-            blockedCity.IsVisible = !hasRegion;
+            cityHint.IsVisible = !hasRegion;
             searchRow.IsVisible = hasRegion;
             city.IsVisible = hasRegion;
             clearCity.IsVisible = !requireSettlement && city.SelectedItem != null;
@@ -287,18 +309,17 @@ public partial class MainPage
                 selectedDistrict?.Code ?? "", string.Join(" · ", words)));
         }
 
-        bool SelectMapPlace(Placemark place)
+        async Task<bool> SelectMapPlace(Placemark place)
         {
-            if (_addressDirectory == null || string.IsNullOrWhiteSpace(place.Locality))
+            await LoadDirectoryAsync();
+            if (!loaded || _addressDirectory == null
+                || BodyHost.Content is not ScrollView scroll || scroll.Content != page)
             {
                 return false;
             }
 
-            var matches = _addressDirectory.Settlements.SelectMany(group => group)
-                .Where(item => item.Name.Equals(place.Locality, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-            var target = matches.Length == 1 ? matches[0] : matches.FirstOrDefault(item =>
-                item.Code == (city.SelectedItem as AddressPlace)?.Code);
+            var target = _addressDirectory.ResolveSettlement(
+                place.Locality, place.SubLocality, place.AdminArea);
             if (target == null)
             {
                 return false;
@@ -308,9 +329,12 @@ public partial class MainPage
                 return true;
             }
 
+            regionWarning.IsVisible = false;
+            cityWarning.IsVisible = false;
+            region.BackgroundColor = ThemeColor("#FFFFFF", "#202833");
+            updating = true;
             region.SelectedItem = _addressDirectory.Regions
                 .First(item => item.Code == target.RegionCode);
-            updating = true;
             citySearch.Text = target.Name;
             updating = false;
             RefreshCities(target.Code, "");

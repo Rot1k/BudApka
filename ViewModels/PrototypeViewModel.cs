@@ -27,10 +27,10 @@ public sealed record MasterOffer(
     int Years,
     string Message,
     string Price,
-    string Rating,
-    string Reviews,
     string PhotoAsset
 );
+
+internal sealed record MasterStats(double? AverageRating, int CompletedOrders);
 
 public sealed record ChatMessage(string Text, string Time, bool FromClient);
 
@@ -40,9 +40,11 @@ internal sealed record OrderNotification(
     int RequestId, AccountMode Recipient, string Title, string Category)
 {
     public bool IsRead { get; set; }
+    public bool OpensOrders { get; init; }
+    public bool OpensServiceInvitations { get; init; }
 }
 
-internal sealed class PrototypeViewModel : INotifyPropertyChanged
+internal sealed partial class PrototypeViewModel : INotifyPropertyChanged
 {
     private readonly Dictionary<int, RepairOrder> _orders = new();
     private readonly List<OrderNotification> _notifications = new();
@@ -106,11 +108,14 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
     public string Street { get; set; } = "";
     public string Building { get; set; } = "";
     public string ExactAddress => (Street.Trim() + " " + Building.Trim()).Trim();
-    public string Budget { get; set; } = "1500";
+    public string Budget { get; set; } = "";
     public bool SaveAddress { get; set; }
     public string Phone { get; set; } = "";
     public string Code { get; set; } = "";
     public string ProfileName { get; set; } = "";
+    public bool HasProfileContactDetails => !string.IsNullOrWhiteSpace(ProfileName)
+        && InputRules.ValidateName(ProfileName) == null
+        && InputRules.TryNormalizePhone(Phone, out _);
     public bool IsSignedIn { get; set; }
     public bool HasRequestDraft { get; set; }
     public bool HasOrder => _orders.Count > 0;
@@ -141,6 +146,39 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
 
     public string SavedAddress { get; private set; } = "";
     public const string LocalMasterId = "local-master";
+    public const string DemoMasterId = "oleksandr";
+
+    public MasterStats GetMasterStats(string masterId)
+    {
+        int completedCount = 0;
+        int reviewCount = 0;
+        double ratingTotal = 0;
+        if (masterId == DemoMasterId)
+        {
+            completedCount = 12;
+            reviewCount = 12;
+            ratingTotal = 59;
+        }
+
+        foreach (var order in _orders.Values)
+        {
+            if (order.Status != OrderStatus.Completed || order.SelectedMaster?.Id != masterId)
+            {
+                continue;
+            }
+
+            completedCount++;
+            if (order.HasReview)
+            {
+                reviewCount++;
+                ratingTotal += order.Rating;
+            }
+        }
+
+        return new MasterStats(reviewCount == 0 ? null : ratingTotal / reviewCount,
+            completedCount);
+    }
+
     public bool CanChat(RepairOrder order) => order.SelectedMaster != null
         && (Mode == AccountMode.Client || order.IsLocalMasterSelected)
         && order.Status is OrderStatus.MasterSelected or OrderStatus.VisitRecorded;
@@ -180,6 +218,18 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
             SavedAddress = $"{request.Area.DisplayName}, {order.ExactAddress}";
         }
 
+        if (DraftServiceId is int serviceId)
+        {
+            var service = MatchingServices(order).FirstOrDefault(card => card.Id == serviceId);
+            order.ServiceSelectionUnavailable = service == null || !InviteForService(order, service);
+        }
+
+        ClearRequestDraft();
+        OpenOrder(order, "Submitted");
+    }
+
+    public void ClearRequestDraft()
+    {
         CategoryId = "";
         OtherCategory = "";
         Symptoms.Clear();
@@ -192,11 +242,28 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
         District = "";
         Street = "";
         Building = "";
-        Budget = "1500";
+        Budget = "";
         SaveAddress = false;
         HasRequestDraft = false;
+        DraftServiceId = null;
+    }
 
-        OpenOrder(order, "Submitted");
+    public bool ReportWorkCompleted(RepairOrder order)
+    {
+        if (Mode != AccountMode.Master || !order.IsLocalMasterSelected
+            || order.MasterReportedCompletion
+            || order.Status is not (OrderStatus.MasterSelected or OrderStatus.VisitRecorded))
+        {
+            return false;
+        }
+
+        order.MasterReportedCompletion = true;
+        _notifications.Add(new(order.Request.Id, AccountMode.Client,
+            "Майстер повідомив, що роботу виконано", order.Request.Category)
+        {
+            OpensOrders = true,
+        });
+        return true;
     }
 
     public bool AddChatMessage(RepairOrder order)
@@ -238,8 +305,7 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
         string price = MasterPrice.Trim();
         var order = FindOrder(request.Id);
         if (Mode != AccountMode.Master || MasterProposals.GetValueOrDefault(request.Id).Sent
-            || (order != null && order.Status is not
-                (OrderStatus.Submitted or OrderStatus.HasResponses)))
+            || (order != null && (!IsOpenForResponses(order) || HasPendingInvitation(order))))
         {
             return;
         }
@@ -250,7 +316,7 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
             string name = string.IsNullOrWhiteSpace(ProfileName) ? "Майстер із цієї сесії"
                 : ProfileName.Trim();
             var offer = new MasterOffer(LocalMasterId, name, request.Category, 0,
-                reply, price + " грн", "", "", "");
+                reply, price.Length > 0 ? price + " грн" : "", "");
             order.Offers.Add(offer);
             order.Status = OrderStatus.HasResponses;
             _notifications.Add(new(request.Id, AccountMode.Client,
@@ -271,7 +337,7 @@ internal sealed class PrototypeViewModel : INotifyPropertyChanged
     }
 
     public string MasterReply { get; set; } = "Можу приїхати завтра.";
-    public string MasterPrice { get; set; } = "1200";
+    public string MasterPrice { get; set; } = "";
     public string MasterPortfolioPhotoPath { get; set; } = "";
     public bool IsMasterProfileActive { get; set; }
     public HashSet<string> MasterCategories { get; } = new(StringComparer.Ordinal);

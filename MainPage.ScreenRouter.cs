@@ -121,6 +121,10 @@ public partial class MainPage
             "EquipmentForm" => EquipmentForm(),
             "AttachEquipment" => AttachEquipment(),
             "MasterFilters" => MasterFilters(),
+            "ServiceCatalog" => ServiceCatalog(),
+            "MyServices" => MyServices(),
+            "ServiceEditor" => ServiceEditor(),
+            "ServiceInvitations" => ServiceInvitations(),
             _ => Home(),
         };
 }

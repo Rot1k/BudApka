@@ -4,16 +4,16 @@ namespace BudApka;
 
 public partial class MainPage
 {
-    readonly List<(Entry Entry, Func<bool> Validate)> _fieldValidators = new();
+    readonly List<(View Field, Func<bool> Validate)> _fieldValidators = new();
 
     bool ValidateFields()
     {
-        Entry? firstInvalid = null;
+        View? firstInvalid = null;
         foreach (var field in _fieldValidators)
         {
             if (!field.Validate())
             {
-                firstInvalid ??= field.Entry;
+                firstInvalid ??= field.Field;
             }
         }
 
@@ -22,13 +22,33 @@ public partial class MainPage
             return true;
         }
 
-        if (BodyHost.Content is ScrollView scroll)
+        ScrollToValidation(firstInvalid);
+        return false;
+    }
+
+    void ScrollToValidation(View target)
+    {
+        if (BodyHost.Content is not ScrollView scroll)
         {
-            _ = scroll.ScrollToAsync(firstInvalid, ScrollToPosition.Center, false);
+            return;
         }
 
-        firstInvalid.Focus();
-        return false;
+        // Let layout position the newly visible error before scrolling to it.
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(50), async () =>
+        {
+            if (BodyHost.Content == scroll && target.Handler != null && target.IsVisible)
+            {
+                await scroll.ScrollToAsync(target, ScrollToPosition.Center, true);
+            }
+        });
+    }
+
+    Label ValidationMessage()
+    {
+        var message = Body("", 14);
+        message.TextColor = ThemeColor("#9B201B", "#FFB4AB");
+        message.IsVisible = false;
+        return message;
     }
 
     static string? Required(string value, string message) =>
@@ -36,6 +56,11 @@ public partial class MainPage
 
     static string? ValidateAmount(string value)
     {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
         string digits = string.Concat(value.Where(c => !char.IsWhiteSpace(c)));
         return int.TryParse(digits, out int amount) && amount > 0
             ? null
@@ -65,7 +90,11 @@ public partial class MainPage
         return row;
     }
 
-    View SelectionRow(string title, bool selected, Action action, string? icon = null)
+    View SelectionRow(string title, bool selected, Action action, string? icon = null) =>
+        SelectionRow(title, selected, action, out _, icon);
+
+    View SelectionRow(string title, bool selected, Action action, out Action<bool> setSelected,
+        string? icon = null)
     {
         var row = new Grid
         {
@@ -85,37 +114,46 @@ public partial class MainPage
             VerticalOptions = LayoutOptions.Center,
         };
         row.Add(icon == null ? label : WithIcon(icon, label));
-        if (selected)
+        var check = new Image
         {
-            row.Add(new Image
-            {
-                Source = Icon("check"),
-                WidthRequest = 24,
-                HeightRequest = 24,
-                VerticalOptions = LayoutOptions.Center,
-            }, 1);
-        }
-        else
-        {
-            row.Add(Body("○", 20, true), 1);
-        }
+            Source = Icon("check"),
+            WidthRequest = 24,
+            HeightRequest = 24,
+            VerticalOptions = LayoutOptions.Center,
+        };
+        var unselected = Body("○", 20, true);
+        unselected.HorizontalOptions = LayoutOptions.Center;
+        unselected.VerticalOptions = LayoutOptions.Center;
+        var marker = new Grid { WidthRequest = 24, MinimumHeightRequest = 30 };
+        marker.Add(check);
+        marker.Add(unselected);
+        row.Add(marker, 1);
         var border = new Border
         {
-            BackgroundColor = ThemeColor(
-                selected ? "#FFF5D6" : "#FFFFFF",
-                selected ? "#263140" : "#202833"
-            ),
-            Stroke = ThemeColor(selected ? "#FFB800" : "#E3E7DF", selected ? "#E3A600" : "#344151"),
-            StrokeThickness = selected ? 2 : 1,
             StrokeShape = new RoundRectangle { CornerRadius = 14 },
             Padding = 14,
             Content = row,
         };
         var tap = new TapGestureRecognizer();
-        SemanticProperties.SetDescription(border, selected ? $"{title}, вибрано" : title);
+        setSelected = UpdateSelection;
+        UpdateSelection(selected);
         tap.Tapped += (_, _) => action();
         border.GestureRecognizers.Add(tap);
         return border;
+
+        void UpdateSelection(bool isSelected)
+        {
+            check.IsVisible = isSelected;
+            unselected.IsVisible = !isSelected;
+            border.BackgroundColor = ThemeColor(
+                isSelected ? "#FFF5D6" : "#FFFFFF", isSelected ? "#263140" : "#202833");
+            border.Stroke = ThemeColor(
+                isSelected ? "#FFB800" : "#E3E7DF", isSelected ? "#E3A600" : "#344151");
+            border.StrokeThickness = isSelected ? 2 : 1;
+            // Keep the same content inset when the border gains a pixel.
+            border.Padding = isSelected ? 13 : 14;
+            SemanticProperties.SetDescription(border, isSelected ? $"{title}, вибрано" : title);
+        }
     }
 
     View LabeledField(
@@ -232,7 +270,7 @@ public partial class MainPage
         };
         if (validate != null)
         {
-            _fieldValidators.Add((entry, Validate));
+            _fieldValidators.Add((stack, Validate));
         }
         if (string.IsNullOrWhiteSpace(suffix))
             stack.Add(control);

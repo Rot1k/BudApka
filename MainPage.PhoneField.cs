@@ -33,6 +33,7 @@ public partial class MainPage
                 }
             };
 #endif
+            int editVersion = 0;
             entry.TextChanged += (_, args) =>
             {
                 string input = args.NewTextValue ?? "";
@@ -41,6 +42,7 @@ public partial class MainPage
                     return;
                 }
 
+                int version = ++editVersion;
                 if (InputRules.IsPhoneDeletion(displayed, input))
                 {
                     displayed = input;
@@ -66,21 +68,43 @@ public partial class MainPage
 
                 if (!InputRules.TryReadPhoneTail(input, out string digits))
                 {
-                    entry.Text = displayed;
-                    entry.CursorPosition = previousEnd;
+                    ApplyCorrection(displayed, previousEnd);
                     return;
                 }
 
                 int digitsAfterEdit = input[editEnd..].Count(InputRules.Digit);
                 int digitsBeforeCursor = Math.Max(0, digits.Length - digitsAfterEdit);
-                displayed = InputRules.FormatPhoneTail(digits);
-                if (input != displayed)
+                string formatted = InputRules.FormatPhoneTail(digits);
+                displayed = input;
+                if (input != formatted)
                 {
-                    entry.Text = displayed;
-                    entry.CursorPosition = PhoneCursorPosition(displayed, digitsBeforeCursor);
+                    ApplyCorrection(formatted,
+                        PhoneCursorPosition(formatted, digitsBeforeCursor));
                 }
 
                 UpdatePhone(digits);
+
+                void ApplyCorrection(string text, int cursorPosition)
+                {
+#if ANDROID
+                    // Wait for Android's text watchers to finish the native edit.
+                    entry.Dispatcher.Dispatch(Apply);
+#else
+                    Apply();
+#endif
+
+                    void Apply()
+                    {
+                        if (version != editVersion || entry.Text != input || entry.Handler == null)
+                        {
+                            return;
+                        }
+
+                        displayed = text;
+                        entry.Text = text;
+                        entry.CursorPosition = cursorPosition;
+                    }
+                }
             };
         }
     }
