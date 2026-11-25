@@ -6,6 +6,8 @@ public partial class MainPage
 {
     string _equipmentReturnScreen = "Profile";
     EquipmentRecord? _editingEquipment;
+    private string _profileNameDraft = "";
+    private string _profilePhoneDraft = "";
 
     View Profile()
     {
@@ -15,12 +17,11 @@ public partial class MainPage
             r.Add(CreateButton("Налаштування профілю майстра", false, () =>
                 _viewModel.CurrentScreen = "MasterActivation", "tools"));
         }
-        string phoneDraft = _viewModel.Phone;
-        string nameDraft = _viewModel.ProfileName;
         bool contactRequired = _viewModel.IsMasterProfileActive;
-        r.Add(PhoneField(phoneDraft, value => phoneDraft = value,
+        r.Add(PhoneField(_profilePhoneDraft, value => _profilePhoneDraft = value,
             required: _viewModel.IsSignedIn || contactRequired));
-        r.Add(ProfileNameField(nameDraft, value => nameDraft = value, contactRequired));
+        r.Add(ProfileNameField(_profileNameDraft, value => _profileNameDraft = value,
+            contactRequired));
         if (_viewModel.IsMasterProfileActive)
         {
             r.Add(Body("Статистика майстра", 16));
@@ -80,9 +81,9 @@ public partial class MainPage
                 return;
             }
 
-            InputRules.TryNormalizePhone(phoneDraft, out var phone);
+            InputRules.TryNormalizePhone(_profilePhoneDraft, out var phone);
             _viewModel.Phone = phone;
-            _viewModel.ProfileName = nameDraft.Trim();
+            _viewModel.ProfileName = _profileNameDraft.Trim();
             await DisplayAlertAsync(
                 "Профіль збережено", "Зміни доступні в цій демо-сесії.", "Готово");
         }));

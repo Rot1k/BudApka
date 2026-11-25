@@ -54,6 +54,11 @@ public partial class MainPage : ContentPage
             {
                 StartMasterProfileEdit();
             }
+            else if (screen == "Profile")
+            {
+                _profileNameDraft = _viewModel.ProfileName;
+                _profilePhoneDraft = _viewModel.Phone;
+            }
             _lastRenderedScreen = screen;
         }
         BodyHost.MaximumWidthRequest = 390;
@@ -152,10 +157,7 @@ public partial class MainPage : ContentPage
             ? $"Сповіщення, непрочитаних: {unreadCount}"
             : "Сповіщення";
         var notifications = HeaderIcon("bell", description, () =>
-        {
-            _viewModel.MarkNotificationsRead();
-            _viewModel.CurrentScreen = "Notifications";
-        });
+            _viewModel.CurrentScreen = "Notifications");
         if (unreadCount > 0)
         {
             notifications.Source = Icon("bell", onAccent: true);
@@ -175,8 +177,8 @@ public partial class MainPage : ContentPage
         var button = new ImageButton
         {
             Source = Icon(icon),
-            WidthRequest = 44,
-            HeightRequest = 44,
+            WidthRequest = 48,
+            HeightRequest = 48,
             Padding = 10,
             BackgroundColor = ThemeColor("#F1F2ED", "#2A3542"),
             CornerRadius = 12,
@@ -241,8 +243,8 @@ public partial class MainPage : ContentPage
             },
             ColumnSpacing = 8,
         };
-        g.Add(ModeButton("Замовити", AccountMode.Client), 0, 0);
-        g.Add(ModeButton("Працювати", AccountMode.Master), 1, 0);
+        g.Add(ModeButton("Клієнт", AccountMode.Client), 0, 0);
+        g.Add(ModeButton("Майстер", AccountMode.Master), 1, 0);
         return g;
     }
 
@@ -327,13 +329,7 @@ public partial class MainPage : ContentPage
                     _viewModel.CurrentScreen = "Address";
                 }
             }),
-            "Address" => WorkflowFooter("Перевірити заявку", () =>
-            {
-                if (_validateAddressSelection?.Invoke() == true && ValidateFields())
-                {
-                    _viewModel.CurrentScreen = "ReviewRequest";
-                }
-            }),
+            "Address" => WorkflowFooter("Перевірити заявку", ReviewAddress),
             "ReviewRequest" or "SignIn" or "MasterActivation" => new ContentView
             {
                 HeightRequest = 0,
@@ -341,6 +337,14 @@ public partial class MainPage : ContentPage
             },
             _ => BottomNav(),
         };
+
+    void ReviewAddress()
+    {
+        if (_validateAddressSelection?.Invoke() == true && ValidateFields())
+        {
+            _viewModel.CurrentScreen = "ReviewRequest";
+        }
+    }
 
     View WorkflowFooter(string text, Action action)
     {

@@ -4,10 +4,13 @@ internal sealed record ServiceCard(int Id, string CategoryId, string Category, s
     WorkArea Area)
 {
     public bool Matches(RepairRequest request) =>
-        CategoryId == request.CategoryId
+        Matches(request.CategoryId, request.Category, request.Area);
+
+    public bool Matches(string categoryId, string category, WorkArea area) =>
+        CategoryId == categoryId
         && (CategoryId != RepairCatalog.Other
-            || Category.Equals(request.Category, StringComparison.CurrentCultureIgnoreCase))
-        && Area.Includes(request.Area);
+            || Category.Equals(category, StringComparison.CurrentCultureIgnoreCase))
+        && Area.Includes(area);
 }
 
 internal sealed record ServiceInvitation(ServiceCard Service, bool Declined = false);
@@ -19,6 +22,12 @@ internal sealed partial class PrototypeViewModel
 
     public IEnumerable<ServiceCard> ServiceCards => _serviceCards.AsEnumerable().Reverse();
     public int? DraftServiceId { get; set; }
+
+    public ServiceCard? GetMatchingDraftService() =>
+        IsMasterProfileActive && DraftServiceId is int id
+            ? _serviceCards.Find(card => card.Id == id
+                && card.Matches(CategoryId, Category, DraftArea))
+            : null;
 
     public bool SaveServiceCard(ServiceCard card)
     {

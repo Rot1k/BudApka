@@ -50,7 +50,12 @@ public partial class MainPage
             value => _viewModel.Street = value,
             validate: ValidateStreet,
             allowCharacter: c => InputRules.AddressCharacter(c) && c != ',',
-            maxLength: 100, configureEntry: entry => street = entry));
+            maxLength: 100, configureEntry: entry =>
+            {
+                street = entry;
+                entry.ReturnType = ReturnType.Next;
+                entry.Completed += (_, _) => ReviewAddress();
+            }));
         details.Add(streetOptions);
         details.Add(LabeledField(
             "Номер будинку · необов’язково", _viewModel.Building, "Наприклад, 12А",

@@ -496,8 +496,10 @@ public partial class MainPage
         r.Add(Card(draft));
         if (_viewModel.DraftServiceId != null)
         {
-            r.Add(Body("Якщо вибрана послуга відповідає категорії та адресі, "
-                + "майстер отримає запрошення після публікації заявки.", 14));
+            r.Add(Body(_viewModel.GetMatchingDraftService() != null
+                ? "Майстер отримає запрошення після публікації заявки."
+                : "Вибрана послуга недоступна для цієї категорії або адреси. "
+                    + "Якщо майстер працює в окремому районі, вкажіть район у заявці.", 14));
         }
         r.Add(
             Card(
@@ -527,12 +529,12 @@ public partial class MainPage
         );
         r.Add(Card(Body(EquipmentSummary(_viewModel.DraftEquipment), 14)));
         r.Add(
-            CreateButton(_viewModel.IsSignedIn ? "Надіслати заявку" : "Увійти й надіслати",
-                true, () =>
+            CreateAsyncButton(_viewModel.IsSignedIn ? "Надіслати заявку" : "Увійти й надіслати",
+                true, async () =>
                 {
                     if (_viewModel.IsSignedIn)
                     {
-                        _viewModel.SubmitRequest();
+                        await SubmitReviewedRequestAsync();
                     }
                     else
                     {
@@ -583,13 +585,13 @@ public partial class MainPage
                 }
             )
         );
-        r.Add(CreateButton("Підтвердити й надіслати", true, () =>
+        r.Add(CreateAsyncButton("Підтвердити й надіслати", true, async () =>
         {
             if (ValidateFields() && InputRules.TryNormalizePhone(_viewModel.Phone, out var phone))
             {
                 _viewModel.Phone = phone;
                 _viewModel.IsSignedIn = true;
-                _viewModel.SubmitRequest();
+                await SubmitReviewedRequestAsync();
             }
         }));
         r.Add(
@@ -598,6 +600,35 @@ public partial class MainPage
             )
         );
         return r;
+    }
+
+    async Task SubmitReviewedRequestAsync()
+    {
+        if (_viewModel.DraftServiceId == null || _viewModel.GetMatchingDraftService() != null)
+        {
+            _viewModel.SubmitRequest();
+            return;
+        }
+
+        string screen = _viewModel.CurrentScreen;
+        bool publishWithoutInvitation = await DisplayAlertAsync(
+            "Запрошення недоступне",
+            "Послуга недоступна для цієї категорії або адреси. "
+                + "Уточніть адресу або опублікуйте заявку без запрошення.",
+            "Опублікувати без запрошення", "Уточнити адресу");
+        if (_viewModel.CurrentScreen != screen)
+        {
+            return;
+        }
+
+        if (publishWithoutInvitation)
+        {
+            _viewModel.SubmitRequest(withoutInvitation: true);
+        }
+        else
+        {
+            _viewModel.CurrentScreen = "Address";
+        }
     }
 
     View Submitted()
@@ -656,7 +687,7 @@ public partial class MainPage
                         Body(
                             string.Join(
                                 " ",
-                                "Профілі, відгуки й відповіді допоможуть порівняти варіанти.",
+                                "Порівняйте відповіді, профілі та оцінки майстрів.",
                                 "Автопризначення немає."
                             )
                         ),
@@ -666,8 +697,8 @@ public partial class MainPage
         );
         AddServiceRecommendations(r, order);
         r.Add(
-            CreateButton("Переглянути мої замовлення", true, () =>
-                _viewModel.CurrentScreen = "Orders"
+            CreateButton("Переглянути пропозиції", true, () =>
+                _viewModel.OpenOrder(order, "Responses")
             )
         );
         return r;
@@ -729,14 +760,14 @@ public partial class MainPage
             {
                 card.Add(Body(offer.Price + " · довідкова ціна", 16));
             }
-            card.Add(CreateButton("Профіль і відгуки", false, () =>
+            card.Add(CreateButton("Профіль майстра", false, () =>
                 {
                     order.PreviewedMaster = offer;
                     _viewModel.CurrentScreen = "MasterProfile";
                 }));
             r.Add(Card(card));
             r.Add(
-                CreateAsyncButton("Обрати " + offer.Name.Split(' ')[0], true, () =>
+                CreateAsyncButton("Обрати майстра", true, () =>
                     ConfirmMasterAsync(order, offer)
                 )
             );

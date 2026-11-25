@@ -201,34 +201,32 @@ public partial class MainPage
 
     void AddServiceRecommendations(VerticalStackLayout page, RepairOrder order)
     {
-        page.Add(Body("Рекомендовані майстри", 18));
-        if (order.ServiceSelectionUnavailable)
+        if (order.Offers.All(offer => offer.Id != PrototypeViewModel.LocalMasterId))
         {
-            page.Add(Body("Заявку опубліковано. Вибрана послуга вже недоступна "
-                + "або не відповідає категорії чи адресі.", 14));
-        }
-
-        var services = _viewModel.MatchingServices(order).ToArray();
-        if (services.Length == 0 && order.Invitation == null)
-        {
-            page.Add(Body("Поки немає послуг для цієї категорії та зони роботи.", 14, true));
-        }
-        foreach (var service in services)
-        {
-            var card = ServiceSummary(service);
-            if (_viewModel.CanInviteForService(order, service))
+            page.Add(Body("Рекомендовані майстри", 18));
+            var services = _viewModel.MatchingServices(order).ToArray();
+            if (services.Length == 0 && order.Invitation == null)
             {
-                card.Add(CreateAsyncButton("Запросити майстра", true, async () =>
-                {
-                    if (await DisplayAlertAsync("Запросити майстра?",
-                        "Майстер побачить точну адресу після прийняття запрошення.",
-                        "Запросити", "Повернутися") && _viewModel.InviteForService(order, service))
-                    {
-                        _viewModel.NotifyAll();
-                    }
-                }));
+                page.Add(Body("Поки немає послуг для цієї категорії та зони роботи.", 14, true));
             }
-            page.Add(Card(card));
+            foreach (var service in services)
+            {
+                var card = ServiceSummary(service);
+                if (_viewModel.CanInviteForService(order, service))
+                {
+                    card.Add(CreateAsyncButton("Запросити майстра", true, async () =>
+                    {
+                        if (await DisplayAlertAsync("Запросити майстра?",
+                            "Майстер побачить точну адресу після прийняття запрошення.",
+                            "Запросити", "Повернутися")
+                            && _viewModel.InviteForService(order, service))
+                        {
+                            _viewModel.NotifyAll();
+                        }
+                    }));
+                }
+                page.Add(Card(card));
+            }
         }
         AddInvitationStatus(page, order);
     }

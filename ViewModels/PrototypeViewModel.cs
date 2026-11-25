@@ -191,7 +191,10 @@ internal sealed partial class PrototypeViewModel : INotifyPropertyChanged
         IsMasterProfileActive && MasterArea.RegionCode.Length > 0
         && MasterArea.Includes(request.Area);
 
-    public void SubmitRequest()
+    public WorkArea DraftArea =>
+        new(RegionCode, SettlementCode, CityDistrictCode, District.Trim());
+
+    public void SubmitRequest(bool withoutInvitation = false)
     {
         if (Mode != AccountMode.Client || !IsSignedIn || !HasRequestDraft
             || DraftError != null || RegionCode.Length == 0 || SettlementCode.Length == 0
@@ -201,11 +204,17 @@ internal sealed partial class PrototypeViewModel : INotifyPropertyChanged
         }
 
         var request = new RepairRequest(
-            _nextRequestId++, CategoryId, Category, Category, Description.Trim(),
+            _nextRequestId, CategoryId, Category, Category, Description.Trim(),
             string.Join(", ", Symptoms), Budget.Trim(),
-            new WorkArea(RegionCode, SettlementCode, CityDistrictCode, District.Trim()),
-            DraftEquipment, PhotoPath);
+            DraftArea, DraftEquipment, PhotoPath);
         var order = new RepairOrder(request, ExactAddress);
+        if (!withoutInvitation && DraftServiceId != null
+            && (GetMatchingDraftService() is not { } service || !InviteForService(order, service)))
+        {
+            return;
+        }
+
+        _nextRequestId++;
         _orders.Add(request.Id, order);
         if (IsInMasterWorkArea(request))
         {
@@ -216,12 +225,6 @@ internal sealed partial class PrototypeViewModel : INotifyPropertyChanged
         if (SaveAddress)
         {
             SavedAddress = $"{request.Area.DisplayName}, {order.ExactAddress}";
-        }
-
-        if (DraftServiceId is int serviceId)
-        {
-            var service = MatchingServices(order).FirstOrDefault(card => card.Id == serviceId);
-            order.ServiceSelectionUnavailable = service == null || !InviteForService(order, service);
         }
 
         ClearRequestDraft();

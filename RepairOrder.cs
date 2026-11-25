@@ -19,7 +19,7 @@ internal sealed class RepairOrder(RepairRequest request, string exactAddress)
     ];
     public bool MasterReportedCompletion { get; set; }
     public ServiceInvitation? Invitation { get; set; }
-    public bool ServiceSelectionUnavailable { get; set; }
+    public OrderStatus? StatusBeforeCompletion { get; set; }
 
     public List<ChatMessage> Messages { get; } = new();
     public DateTime VisitDate { get; set; } = DateTime.Today.AddDays(2);

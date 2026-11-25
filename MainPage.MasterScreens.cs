@@ -177,23 +177,26 @@ public partial class MainPage
 
     View Available()
     {
-        var page = Root("Доступні заявки", "Заявки у вибраному регіоні");
         var area = _viewModel.MasterArea;
+        var page = Root("Доступні заявки", area.DisplayName);
         var filter = _viewModel.MasterFilterArea;
         var region = new WorkArea(area.RegionCode, "", "", "");
-        var categories = RepairCatalog.Categories.Where(category =>
-            _viewModel.MasterCategories.Contains(category.Id)).Select(category =>
-            category.Id == RepairCatalog.Other ? _viewModel.MasterOtherCategory : category.Name);
-        page.Add(Card(Body("Зона роботи: " + area.DisplayName + Environment.NewLine
-            + "Послуги: " + string.Join(", ", categories))));
-        page.Add(CreateButton("Мої картки послуг", false, () =>
-            _viewModel.CurrentScreen = "MyServices", "tools"));
-        page.Add(CreateButton("Запрошення на роботи", false, () =>
-            _viewModel.CurrentScreen = "ServiceInvitations", "bell"));
-        page.Add(CreateButton("Змінити умови", false, () =>
-            _viewModel.CurrentScreen = "MasterActivation"));
-        page.Add(CreateButton("Фільтри", false, () =>
-            _viewModel.CurrentScreen = "MasterFilters", "filter"));
+        var actions = new Grid
+        {
+            ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) },
+            RowDefinitions = { new(GridLength.Auto), new(GridLength.Auto) },
+            ColumnSpacing = 8,
+            RowSpacing = 8,
+        };
+        actions.Add(CreateButton("Послуги", false, () =>
+            _viewModel.CurrentScreen = "MyServices", "tools"), 0, 0);
+        actions.Add(CreateButton("Запрошення", false, () =>
+            _viewModel.CurrentScreen = "ServiceInvitations", "bell"), 1, 0);
+        actions.Add(CreateButton("Умови роботи", false, () =>
+            _viewModel.CurrentScreen = "MasterActivation"), 0, 1);
+        actions.Add(CreateButton("Фільтри", false, () =>
+            _viewModel.CurrentScreen = "MasterFilters", "filter"), 1, 1);
+        page.Add(actions);
         AddFilterSummary(page, _availableOrdersFilter);
 
         bool filtered = filter.SettlementCode.Length > 0 || _viewModel.FilterMasterServices;

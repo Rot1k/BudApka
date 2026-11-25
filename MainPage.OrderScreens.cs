@@ -149,11 +149,16 @@ public partial class MainPage
         };
         review.TextChanged += (_, e) => order.ReviewText = e.NewTextValue;
         r.Add(review);
-        r.Add(CreateButton("Повернути попередній статус", false, () =>
+        if (order.StatusBeforeCompletion is { } previous)
         {
-            order.Status = OrderStatus.VisitRecorded;
-            _viewModel.CurrentScreen = "Orders";
-        }));
+            r.Add(CreateButton("Повернути попередній статус", false, () =>
+            {
+                order.Status = previous;
+                order.StatusBeforeCompletion = null;
+                order.ReviewText = "";
+                _viewModel.CurrentScreen = "Orders";
+            }));
+        }
         r.Add(CreateButton("Зберегти відгук", true, () =>
         {
             if (!ValidateFields() || !int.TryParse(ratingDraft, out int rating))
@@ -232,6 +237,7 @@ public partial class MainPage
         SemanticScreenReader.Default.Announce(PrototypeViewModel.OrderStatusLabel(next));
         if (completing)
         {
+            order.StatusBeforeCompletion = previous;
             _viewModel.OpenOrder(order, "Completion");
         }
         else

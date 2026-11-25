@@ -62,7 +62,7 @@ public partial class MainPage
         }
         r.Add(Card(card));
         r.Add(
-            CreateAsyncButton("Обрати " + master.Name.Split(' ')[0], true, () =>
+            CreateAsyncButton("Обрати майстра", true, () =>
                 ConfirmMasterAsync(order, master)
             )
         );
@@ -124,7 +124,7 @@ public partial class MainPage
         var mode = _viewModel.Mode;
         var r = Root(
             _viewModel.Mode == AccountMode.Master
-                ? "Клієнт Олег"
+                ? "Клієнт"
                 : order.SelectedMaster?.Name ?? "Олександр Коваль",
             _viewModel.Mode == AccountMode.Master
                 ? $"Клієнт обрав вас · заявка №{order.Request.Id}."
