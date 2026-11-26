@@ -100,12 +100,24 @@ public partial class MainPage
         portfolio.Add(photo);
         portfolio.Add(CreateAsyncButton("Додати фото", false, async () =>
         {
-            var files = await MediaPicker.Default.PickPhotosAsync();
-            var file = files.FirstOrDefault();
-            if (file != null)
+            try
             {
-                _viewModel.MasterPortfolioPhotoPath = file.FullPath;
-                UpdatePortfolioPhoto();
+                var files = await MediaPicker.Default.PickPhotosAsync();
+                var file = files.FirstOrDefault();
+                if (file != null)
+                {
+                    _viewModel.MasterPortfolioPhotoPath =
+                        await _stateStore.ImportPhotoAsync(file);
+                    UpdatePortfolioPhoto();
+                }
+            }
+            catch (Exception exception) when (exception is FeatureNotSupportedException
+                or PermissionException or IOException or UnauthorizedAccessException)
+            {
+                await DisplayAlertAsync(
+                    "Фото не додано",
+                    "Перевірте доступ до фото й спробуйте ще раз.",
+                    "Готово");
             }
         }, "camera"));
 

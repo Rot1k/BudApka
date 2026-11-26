@@ -242,12 +242,12 @@ public partial class MainPage
                 if (file != null && BodyHost.Content is ScrollView { Content: var content }
                     && content == r)
                 {
-                    _viewModel.PhotoPath = file.FullPath;
+                    _viewModel.PhotoPath = await _stateStore.ImportPhotoAsync(file);
                     _viewModel.NotifyAll();
                 }
             }
             catch (Exception exception) when (exception is FeatureNotSupportedException
-                or PermissionException or IOException)
+                or PermissionException or IOException or UnauthorizedAccessException)
             {
                 await DisplayAlertAsync(
                     "Фото не додано",

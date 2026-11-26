@@ -37,6 +37,7 @@ public partial class MainPage : ContentPage
     {
         InitializeComponent();
         BindingContext = _viewModel;
+        RestoreState();
         _viewModel.PropertyChanged += (_, _) => MainThread.BeginInvokeOnMainThread(Render);
         if (Application.Current != null)
             Application.Current.RequestedThemeChanged += (_, _) => Render();
@@ -80,6 +81,7 @@ public partial class MainPage : ContentPage
         }
         BodyHost.Content = body;
         NavigationHost.Content = Footer();
+        ScheduleStateSave();
 
         async void RestoreScroll(object? sender, EventArgs args)
         {
