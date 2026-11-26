@@ -4,6 +4,8 @@ namespace BudApka;
 
 public partial class MainPage
 {
+    private string _completionReturnScreen = "Orders";
+
     View Visit()
     {
         if (_viewModel.Mode != AccountMode.Client
@@ -156,7 +158,7 @@ public partial class MainPage
                 order.Status = previous;
                 order.StatusBeforeCompletion = null;
                 order.ReviewText = "";
-                _viewModel.CurrentScreen = "Orders";
+                _viewModel.CurrentScreen = _completionReturnScreen;
             }));
         }
         r.Add(CreateButton("Зберегти відгук", true, () =>
@@ -169,13 +171,13 @@ public partial class MainPage
             order.Rating = rating;
             order.ReviewText = order.ReviewText.Trim();
             order.HasReview = true;
-            _viewModel.CurrentScreen = "Orders";
+            _viewModel.CurrentScreen = _completionReturnScreen;
         }));
         r.Add(CreateButton("Пропустити відгук", false, () =>
         {
             order.ReviewText = "";
             order.Rating = 5;
-            _viewModel.CurrentScreen = "Orders";
+            _viewModel.CurrentScreen = _completionReturnScreen;
         }));
         return r;
     }
@@ -208,8 +210,38 @@ public partial class MainPage
         return r;
     }
 
+    View OrderDetails()
+    {
+        if (_viewModel.CurrentOrder is not { } order)
+        {
+            return Orders();
+        }
+
+        var mode = _viewModel.Mode;
+        if (mode == AccountMode.Client || order.IsLocalMasterSelected)
+        {
+            var page = Root("Деталі замовлення");
+            page.Add(OrderCard(order, mode));
+            return page;
+        }
+
+        if (_viewModel.IsMasterProfileActive && order.Invitation != null)
+        {
+            var page = Root("Запрошення на роботу");
+            page.Add(ServiceInvitationCard(order));
+            return page;
+        }
+
+        return Orders();
+    }
+
+    bool IsShowingOrder(string screen, RepairOrder order) =>
+        _viewModel.CurrentScreen == screen && (screen == "Orders"
+            || (screen == "OrderDetails" && _viewModel.CurrentOrder == order));
+
     async Task ChangeOrderStatusAsync(RepairOrder order, OrderStatus next)
     {
+        string screen = _viewModel.CurrentScreen;
         OrderStatus previous = order.Status;
         if (previous is OrderStatus.Completed or OrderStatus.Cancelled
             || (next == OrderStatus.Completed && !CanConfirmCompletion(order)))
@@ -228,7 +260,7 @@ public partial class MainPage
         );
 
         if (!confirmed || order.Status != previous || _viewModel.Mode != AccountMode.Client
-            || _viewModel.CurrentScreen != "Orders")
+            || !IsShowingOrder(screen, order))
         {
             return;
         }
@@ -238,6 +270,7 @@ public partial class MainPage
         if (completing)
         {
             order.StatusBeforeCompletion = previous;
+            _completionReturnScreen = screen;
             _viewModel.OpenOrder(order, "Completion");
         }
         else
@@ -252,11 +285,11 @@ public partial class MainPage
 
     async Task ReportWorkCompletedAsync(RepairOrder order)
     {
+        string screen = _viewModel.CurrentScreen;
         bool confirmed = await DisplayAlertAsync("Роботу виконано?",
             "Клієнт отримає сповіщення й зможе підтвердити завершення.",
             "Повідомити клієнта", "Повернутися");
-        if (confirmed && _viewModel.CurrentScreen == "Orders"
-            && _viewModel.ReportWorkCompleted(order))
+        if (confirmed && IsShowingOrder(screen, order) && _viewModel.ReportWorkCompleted(order))
         {
             _viewModel.NotifyAll();
         }
@@ -314,12 +347,12 @@ public partial class MainPage
         if (client)
         {
             content.Add(Body(order.SelectedMaster?.Name ?? "Майстра ще не обрано"));
-            AddInvitationStatus(content, order);
         }
         else if (_viewModel.CanChat(order))
         {
             content.Add(Body("Точна адреса: " + order.ExactAddress));
         }
+        AddInvitationStatus(content, order);
 
         if (order.RecordedVisitText.Length > 0)
         {

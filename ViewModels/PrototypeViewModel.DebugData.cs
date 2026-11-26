@@ -153,7 +153,7 @@ internal sealed partial class PrototypeViewModel
             _notifications.Add(new(order.Request.Id, AccountMode.Client,
                 "Майстер повідомив, що тестову роботу виконано", order.Request.Category)
             {
-                OpensOrders = true,
+                OpensOrderDetails = true,
             });
         }
     }

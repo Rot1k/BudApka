@@ -40,8 +40,7 @@ internal sealed record OrderNotification(
     int RequestId, AccountMode Recipient, string Title, string Category)
 {
     public bool IsRead { get; set; }
-    public bool OpensOrders { get; init; }
-    public bool OpensServiceInvitations { get; init; }
+    public bool OpensOrderDetails { get; init; }
 }
 
 internal sealed partial class PrototypeViewModel : INotifyPropertyChanged
@@ -264,7 +263,7 @@ internal sealed partial class PrototypeViewModel : INotifyPropertyChanged
         _notifications.Add(new(order.Request.Id, AccountMode.Client,
             "Майстер повідомив, що роботу виконано", order.Request.Category)
         {
-            OpensOrders = true,
+            OpensOrderDetails = true,
         });
         return true;
     }

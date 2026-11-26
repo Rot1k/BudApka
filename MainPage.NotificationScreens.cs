@@ -38,16 +38,13 @@ public partial class MainPage
             }
 
             var order = _viewModel.FindOrder(notification.RequestId);
-            if (order != null && notification.OpensServiceInvitations)
+            if (order != null && notification.OpensOrderDetails)
             {
-                content.Add(CreateButton("Переглянути запрошення", false, () =>
-                    OpenNotification(() => _viewModel.CurrentScreen = "ServiceInvitations"),
-                    "bell"));
-            }
-            else if (order != null && notification.OpensOrders)
-            {
-                content.Add(CreateButton("Мої замовлення", false, () =>
-                    OpenNotification(() => _viewModel.CurrentScreen = "Orders"), "request"));
+                string action = notification.Recipient == AccountMode.Master
+                    ? "Переглянути запрошення" : "Відкрити замовлення";
+                content.Add(CreateButton(action, false, () =>
+                    OpenNotification(() => _viewModel.OpenOrder(order, "OrderDetails")),
+                    "request"));
             }
             else if (order != null && _viewModel.Mode == AccountMode.Client
                 && order.Status == OrderStatus.HasResponses)
@@ -70,6 +67,13 @@ public partial class MainPage
             {
                 content.Add(CreateButton("Відкрити чат", false, () =>
                     OpenNotification(() => _viewModel.OpenOrder(order, "Chat")), "chat"));
+            }
+            else if (order != null
+                && (_viewModel.Mode == AccountMode.Client || order.IsLocalMasterSelected))
+            {
+                content.Add(CreateButton("Відкрити замовлення", false, () =>
+                    OpenNotification(() => _viewModel.OpenOrder(order, "OrderDetails")),
+                    "request"));
             }
 
             page.Add(Card(content));

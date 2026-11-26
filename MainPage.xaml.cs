@@ -372,7 +372,7 @@ public partial class MainPage : ContentPage
             "Home" => master ? "Доступні" : "Головна",
             "Chat" or "Chats" => "Чати",
             "Profile" or "Equipment" or "EquipmentForm" or "MasterActivation" => "Профіль",
-            "Orders" => master ? "Мої роботи" : "Заявки",
+            "Orders" or "OrderDetails" => master ? "Мої роботи" : "Заявки",
             "AvailableRequests" or "MasterRequest" or "MasterFilters" => master ? "Доступні" : "Заявки",
             "Proposal" or "ProposalSent" => master ? "Мої роботи" : "Заявки",
             _ => "Заявки",

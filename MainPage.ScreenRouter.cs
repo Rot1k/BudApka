@@ -111,6 +111,7 @@ public partial class MainPage
             "VisitDetails" => Visit(),
             "Completion" => Completion(),
             "Orders" => Orders(),
+            "OrderDetails" => OrderDetails(),
             "Profile" => Profile(),
             "MasterActivation" => ActivateMaster(),
             "AvailableRequests" => Available(),

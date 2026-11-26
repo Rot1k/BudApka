@@ -13,7 +13,16 @@ internal sealed record ServiceCard(int Id, string CategoryId, string Category, s
         && Area.Includes(area);
 }
 
-internal sealed record ServiceInvitation(ServiceCard Service, bool Declined = false);
+internal enum ServiceInvitationStatus
+{
+    Pending,
+    Accepted,
+    Declined,
+    Closed,
+}
+
+internal sealed record ServiceInvitation(ServiceCard Service,
+    ServiceInvitationStatus Status = ServiceInvitationStatus.Pending);
 
 internal sealed partial class PrototypeViewModel
 {
@@ -85,12 +94,23 @@ internal sealed partial class PrototypeViewModel
 
         order.Invitation = new ServiceInvitation(card);
         _notifications.Add(new(order.Request.Id, AccountMode.Master,
-            "Запрошення на послугу", order.Request.Category) { OpensServiceInvitations = true });
+            "Запрошення на послугу", order.Request.Category) { OpensOrderDetails = true });
         return true;
     }
 
     public static bool HasPendingInvitation(RepairOrder order) =>
-        IsOpenForResponses(order) && order.Invitation is { Declined: false };
+        GetInvitationStatus(order) == ServiceInvitationStatus.Pending;
+
+    public static ServiceInvitationStatus? GetInvitationStatus(RepairOrder order)
+    {
+        if (order.Invitation is not { } invitation)
+        {
+            return null;
+        }
+
+        return invitation.Status == ServiceInvitationStatus.Pending && !IsOpenForResponses(order)
+            ? ServiceInvitationStatus.Closed : invitation.Status;
+    }
 
     private static bool IsOpenForResponses(RepairOrder order) =>
         order.Status is OrderStatus.Submitted or OrderStatus.HasResponses;
@@ -112,14 +132,14 @@ internal sealed partial class PrototypeViewModel
             order.SelectedMaster = offer;
             order.Status = OrderStatus.MasterSelected;
         }
-        else
+        order.Invitation = invitation with
         {
-            order.Invitation = invitation with { Declined = true };
-        }
+            Status = accept ? ServiceInvitationStatus.Accepted : ServiceInvitationStatus.Declined,
+        };
 
         _notifications.Add(new(order.Request.Id, AccountMode.Client,
             accept ? "Майстер прийняв запрошення" : "Майстер відхилив запрошення",
-            order.Request.Category) { OpensOrders = true });
+            order.Request.Category) { OpensOrderDetails = true });
         return true;
     }
 }

@@ -233,13 +233,21 @@ public partial class MainPage
 
     void AddInvitationStatus(VerticalStackLayout page, RepairOrder order)
     {
-        if (order.Invitation?.Declined == true)
+        string? status = PrototypeViewModel.GetInvitationStatus(order) switch
         {
-            page.Add(Body("Майстер відхилив запрошення.", 14));
-        }
-        else if (PrototypeViewModel.HasPendingInvitation(order))
+            ServiceInvitationStatus.Pending when _viewModel.Mode == AccountMode.Client =>
+                "Запрошення надіслано. Очікуємо відповіді майстра.",
+            ServiceInvitationStatus.Pending => "Запрошення очікує вашої відповіді.",
+            ServiceInvitationStatus.Accepted => "Запрошення прийнято.",
+            ServiceInvitationStatus.Declined => "Запрошення відхилено.",
+            ServiceInvitationStatus.Closed when order.Status == OrderStatus.Cancelled =>
+                "Запрошення закрито. Замовлення скасовано.",
+            ServiceInvitationStatus.Closed => "Запрошення закрито.",
+            _ => null,
+        };
+        if (status != null)
         {
-            page.Add(Body("Запрошення надіслано. Очікуємо відповіді майстра.", 14));
+            page.Add(Body(status, 14));
         }
     }
 
@@ -258,31 +266,42 @@ public partial class MainPage
         }
         foreach (var order in orders)
         {
-            var request = order.Request;
-            var card = new VerticalStackLayout { Spacing = 8 };
-            card.Add(Body($"№{request.Id} · {request.Category}", 18));
-            card.Add(Body(request.Area.DisplayName, 14));
-            card.Add(Body(request.Description, 14));
-            if (request.Symptoms.Length > 0)
-            {
-                card.Add(Body(request.Symptoms, 14, true));
-            }
-            card.Add(CreateButton("Прийняти", true, () =>
-            {
-                if (_viewModel.RespondToServiceInvitation(order, accept: true))
-                {
-                    _viewModel.OpenOrder(order, "Chat");
-                }
-            }, "check"));
-            card.Add(CreateButton("Відхилити", false, () =>
-            {
-                if (_viewModel.RespondToServiceInvitation(order, accept: false))
-                {
-                    _viewModel.NotifyAll();
-                }
-            }));
-            page.Add(Card(card));
+            page.Add(ServiceInvitationCard(order));
         }
         return page;
+    }
+
+    View ServiceInvitationCard(RepairOrder order)
+    {
+        var request = order.Request;
+        var card = new VerticalStackLayout { Spacing = 8 };
+        card.Add(Body($"№{request.Id} · {request.Category}", 18));
+        card.Add(Body(request.Area.DisplayName, 14));
+        card.Add(Body(request.Description, 14));
+        if (request.Symptoms.Length > 0)
+        {
+            card.Add(Body(request.Symptoms, 14, true));
+        }
+        AddInvitationStatus(card, order);
+        if (!PrototypeViewModel.HasPendingInvitation(order))
+        {
+            return Card(card);
+        }
+
+        card.Add(CreateButton("Прийняти", true, () =>
+        {
+            if (_viewModel.RespondToServiceInvitation(order, accept: true))
+            {
+                _viewModel.OpenOrder(order, "Chat");
+            }
+        }, "check"));
+        card.Add(CreateButton("Відхилити", false, () =>
+        {
+            if (_viewModel.RespondToServiceInvitation(order, accept: false))
+            {
+                _viewModel.NotifyAll();
+            }
+        }));
+        return Card(card);
     }
 }
