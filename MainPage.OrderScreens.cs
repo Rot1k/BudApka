@@ -6,30 +6,56 @@ public partial class MainPage
 {
     private string _completionReturnScreen = "Orders";
 
+    // Drafts keep the order's current visit untouched until it is recorded or confirmed.
+    DateTime _visitDateDraft = DateTime.Today;
+    string _visitWindowDraft = "";
+
+    void StartVisitDraft()
+    {
+        if (_viewModel.CurrentOrder is not { } order)
+        {
+            return;
+        }
+
+        _visitDateDraft = order.VisitDate < DateTime.Today ? DateTime.Today : order.VisitDate;
+        _visitWindowDraft = order.VisitWindow;
+    }
+
     View Visit()
     {
-        if (_viewModel.Mode != AccountMode.Client
-            || _viewModel.CurrentOrder is not { } order || !_viewModel.CanChat(order))
+        if (_viewModel.CurrentOrder is not { } order)
         {
             return Orders();
         }
 
+        bool proposing = _viewModel.CanProposeVisit(order);
+        if (!proposing && !_viewModel.CanRecordVisit(order))
+        {
+            return _viewModel.CanChat(order) ? Chat() : Orders();
+        }
 
-        var r = Root(
-            "Запишіть обговорений час",
-            "Це зручна нотатка після чату, не формальний контракт."
-        );
+        bool rescheduling = order.Status == OrderStatus.VisitRecorded;
+        var r = proposing
+            ? Root(rescheduling ? "Перенести візит" : "Запропонувати час візиту",
+                "Чинний час не зміниться, доки співрозмовник не підтвердить новий.")
+            : Root("Запишіть обговорений час",
+                "Це зручна нотатка після чату, не формальний контракт.");
+        if (rescheduling)
+        {
+            r.Add(Body("Чинний час: " + order.RecordedVisitText, 14, true));
+        }
+
         r.Add(Body("Дата", 14));
         var datePicker = new DatePicker
         {
-            Date = order.VisitDate,
+            Date = _visitDateDraft,
             MinimumDate = DateTime.Today,
             FontFamily = "Inter",
             FontSize = 16,
             TextColor = ThemeColor("#202823", "#F4F7FB"),
             BackgroundColor = ThemeColor("#FFFFFF", "#202833"),
         };
-        datePicker.DateSelected += (_, e) => order.VisitDate = e.NewDate ?? DateTime.Today;
+        datePicker.DateSelected += (_, e) => _visitDateDraft = e.NewDate ?? DateTime.Today;
         r.Add(
             new Border
             {
@@ -45,13 +71,41 @@ public partial class MainPage
         r.Add(
             LabeledField(
                 "Зручний проміжок",
-                order.VisitWindow,
+                _visitWindowDraft,
                 "Після 17:00",
                 "Довільний текст — без фіксованих слотів.",
-                v => order.VisitWindow = v,
+                v => _visitWindowDraft = v,
                 validate: v => Required(v, "Вкажіть погоджений час, наприклад «після 17:00».")
             )
         );
+        if (_viewModel.Mode == AccountMode.Client)
+        {
+            r.Add(Card(VisitOrderDetails(order)));
+        }
+
+        r.Add(CreateButton(proposing ? "Надіслати пропозицію" : "Зберегти деталі візиту", true,
+            () =>
+            {
+                if (!ValidateFields())
+                {
+                    return;
+                }
+
+                if (proposing)
+                {
+                    _viewModel.ProposeVisit(order, _visitDateDraft, _visitWindowDraft);
+                }
+                else
+                {
+                    _viewModel.RecordVisit(order, _visitDateDraft, _visitWindowDraft);
+                }
+            }));
+        r.Add(CreateButton("Повернутися до чату", false, () => _viewModel.CurrentScreen = "Chat"));
+        return r;
+    }
+
+    View VisitOrderDetails(RepairOrder order)
+    {
         var details = new VerticalStackLayout
         {
             Spacing = 8,
@@ -74,16 +128,8 @@ public partial class MainPage
         {
             details.Add(Body("Орієнтир: " + master.Price));
         }
-        r.Add(Card(details));
-        r.Add(CreateButton("Зберегти деталі візиту", true, () =>
-            {
-                if (ValidateFields())
-                {
-                    _viewModel.RecordVisit(order);
-                }
-            }));
-        r.Add(CreateButton("Повернутися до чату", false, () => _viewModel.CurrentScreen = "Chat"));
-        return r;
+
+        return details;
     }
 
     View Completion()
@@ -364,6 +410,15 @@ public partial class MainPage
         if (order.RecordedVisitText.Length > 0)
         {
             content.Add(Body(order.RecordedVisitText, 14, true));
+        }
+
+        if (_viewModel.CanChat(order) && PrototypeViewModel.HasPendingVisitProposal(order)
+            && order.VisitProposal is { } proposal)
+        {
+            bool waitingForMe = proposal.ProposedBy != mode;
+            content.Add(WithIcon("calendar", Body(waitingForMe
+                ? "Новий час чекає вашої відповіді: " + proposal.Text
+                : "Новий час очікує підтвердження: " + proposal.Text, 14)));
         }
 
         if (order.Status == OrderStatus.Completed && order.Review is { } review)

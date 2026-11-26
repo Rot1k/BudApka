@@ -195,17 +195,75 @@ public partial class MainPage
         r.Add(send);
         r.Add(feedback);
 
-        if (_viewModel.Mode == AccountMode.Client)
+        r.Add(VisitSection(order));
+        return r;
+    }
+
+    View VisitSection(RepairOrder order)
+    {
+        var section = new VerticalStackLayout { Spacing = 8 };
+        section.Add(Body(order.RecordedVisitText.Length > 0
+            ? "Час візиту: " + order.RecordedVisitText
+            : "Час візиту ще не погоджено.", 14));
+
+        if (order.VisitProposal is { } proposal)
         {
-            r.Add(CreateButton("Час візиту", true, () =>
-                _viewModel.CurrentScreen = "VisitDetails", "calendar"));
-        }
-        else if (order.Status == OrderStatus.VisitRecorded)
-        {
-            r.Add(Body("Час візиту: " + order.RecordedVisitText, 14));
+            section.Add(VisitProposalCard(order, proposal));
         }
 
-        return r;
+        if (_viewModel.CanRecordVisit(order))
+        {
+            section.Add(CreateButton("Час візиту", true, () =>
+                _viewModel.CurrentScreen = "VisitDetails", "calendar"));
+        }
+        else if (_viewModel.CanProposeVisit(order))
+        {
+            string title = order.Status == OrderStatus.VisitRecorded
+                ? "Перенести візит" : "Запропонувати час візиту";
+            section.Add(CreateButton(title, true, () =>
+                _viewModel.CurrentScreen = "VisitDetails", "calendar"));
+        }
+
+        return section;
+    }
+
+    View VisitProposalCard(RepairOrder order, VisitProposal proposal)
+    {
+        bool mine = proposal.ProposedBy == _viewModel.Mode;
+        string author = mine ? "Ви"
+            : proposal.ProposedBy == AccountMode.Client ? "Клієнт" : "Майстер";
+        var content = new VerticalStackLayout { Spacing = 8 };
+        content.Add(Body("ПРОПОЗИЦІЯ НОВОГО ЧАСУ", 12, true));
+        content.Add(WithIcon("calendar", Body(proposal.Text)));
+        content.Add(Body($"Запропонував(-ла): {author}", 14, true));
+        content.Add(Body(proposal.Status switch
+        {
+            VisitProposalStatus.Pending when mine => "Очікує відповіді співрозмовника.",
+            VisitProposalStatus.Pending => "Очікує вашої відповіді.",
+            VisitProposalStatus.Accepted => "Підтверджено. Час візиту оновлено.",
+            VisitProposalStatus.Declined => "Відхилено. Чинний час не змінився.",
+            _ => "Пропозицію скасовано.",
+        }, 14));
+
+        if (proposal.Status != VisitProposalStatus.Pending)
+        {
+            return Card(content);
+        }
+
+        if (mine)
+        {
+            content.Add(CreateButton("Скасувати пропозицію", false, () =>
+                _viewModel.WithdrawVisitProposal(order)));
+        }
+        else
+        {
+            content.Add(CreateButton("Підтвердити час", true, () =>
+                _viewModel.RespondToVisitProposal(order, true), "check"));
+            content.Add(CreateButton("Відхилити", false, () =>
+                _viewModel.RespondToVisitProposal(order, false), "close"));
+        }
+
+        return Card(content);
     }
 
     View ChatBubble(ChatMessage message)

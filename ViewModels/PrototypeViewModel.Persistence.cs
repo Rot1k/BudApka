@@ -34,6 +34,7 @@ internal sealed record OrderSnapshot
     public DateTime VisitDate { get; init; }
     public string VisitWindow { get; init; } = "";
     public string RecordedVisitText { get; init; } = "";
+    public VisitProposal? VisitProposal { get; init; }
     public MasterReview? Review { get; init; }
     public string ClientMessageDraft { get; init; } = "";
     public string MasterMessageDraft { get; init; } = "";
@@ -144,6 +145,7 @@ internal sealed partial class PrototypeViewModel
         VisitDate = order.VisitDate,
         VisitWindow = order.VisitWindow,
         RecordedVisitText = order.RecordedVisitText,
+        VisitProposal = order.VisitProposal,
         Review = order.Review,
         ClientMessageDraft = order.GetMessageDraft(AccountMode.Client),
         MasterMessageDraft = order.GetMessageDraft(AccountMode.Master),
@@ -228,6 +230,7 @@ internal sealed partial class PrototypeViewModel
             VisitDate = item.VisitDate,
             VisitWindow = item.VisitWindow,
             RecordedVisitText = item.RecordedVisitText,
+            VisitProposal = item.VisitProposal,
             Review = item.Review,
         };
 
