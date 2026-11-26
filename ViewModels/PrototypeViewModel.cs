@@ -293,18 +293,6 @@ internal sealed partial class PrototypeViewModel : INotifyPropertyChanged
         }
     }
 
-    public void RecordVisit(RepairOrder order)
-    {
-        if (CurrentOrder != order || Mode != AccountMode.Client || !CanChat(order))
-        {
-            return;
-        }
-
-        order.RecordedVisitText = $"{order.VisitDate:d} · {order.VisitWindow.Trim()}";
-        order.Status = OrderStatus.VisitRecorded;
-        CurrentScreen = "Orders";
-    }
-
     public string MasterReply { get; set; } = "Можу приїхати завтра.";
     public string MasterPrice { get; set; } = "";
     public string MasterPortfolioPhotoPath { get; set; } = "";

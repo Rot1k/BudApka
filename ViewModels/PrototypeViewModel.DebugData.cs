@@ -109,7 +109,7 @@ internal sealed partial class PrototypeViewModel
             }
             if (status == OrderStatus.VisitRecorded)
             {
-                order.RecordedVisitText = $"{order.VisitDate:d} · {order.VisitWindow}";
+                order.RecordedVisitText = FormatVisit(order.VisitDate, order.VisitWindow);
             }
             if (rating is int value && masterId != null)
             {

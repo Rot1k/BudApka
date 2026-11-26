@@ -25,6 +25,7 @@ internal sealed class RepairOrder(RepairRequest request, string exactAddress)
     public DateTime VisitDate { get; set; } = DateTime.Today.AddDays(2);
     public string VisitWindow { get; set; } = "Після 17:00";
     public string RecordedVisitText { get; set; } = "";
+    public VisitProposal? VisitProposal { get; set; }
     public MasterReview? Review { get; set; }
 
     public string GetMessageDraft(AccountMode mode) =>

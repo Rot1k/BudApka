@@ -55,6 +55,10 @@ public partial class MainPage : ContentPage
             {
                 StartMasterProfileEdit();
             }
+            else if (screen == "VisitDetails")
+            {
+                StartVisitDraft();
+            }
             else if (screen == "Profile")
             {
                 _profileNameDraft = _viewModel.ProfileName;
