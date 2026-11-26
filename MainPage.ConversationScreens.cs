@@ -61,6 +61,7 @@ public partial class MainPage
             card.Add(Body(master.Price + " · довідкова ціна"));
         }
         r.Add(Card(card));
+        r.Add(MasterReviewsView(master.Id));
         r.Add(
             CreateAsyncButton("Обрати майстра", true, () =>
                 ConfirmMasterAsync(order, master)

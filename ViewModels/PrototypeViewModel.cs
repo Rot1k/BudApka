@@ -30,8 +30,6 @@ public sealed record MasterOffer(
     string PhotoAsset
 );
 
-internal sealed record MasterStats(double? AverageRating, int CompletedOrders);
-
 public sealed record ChatMessage(string Text, string Time, bool FromClient);
 
 public sealed record EquipmentRecord(string Name, string Type, string Model, string Notes = "");
@@ -146,37 +144,6 @@ internal sealed partial class PrototypeViewModel : INotifyPropertyChanged
     public string SavedAddress { get; private set; } = "";
     public const string LocalMasterId = "local-master";
     public const string DemoMasterId = "oleksandr";
-
-    public MasterStats GetMasterStats(string masterId)
-    {
-        int completedCount = 0;
-        int reviewCount = 0;
-        double ratingTotal = 0;
-        if (masterId == DemoMasterId)
-        {
-            completedCount = 12;
-            reviewCount = 12;
-            ratingTotal = 59;
-        }
-
-        foreach (var order in _orders.Values)
-        {
-            if (order.Status != OrderStatus.Completed || order.SelectedMaster?.Id != masterId)
-            {
-                continue;
-            }
-
-            completedCount++;
-            if (order.HasReview)
-            {
-                reviewCount++;
-                ratingTotal += order.Rating;
-            }
-        }
-
-        return new MasterStats(reviewCount == 0 ? null : ratingTotal / reviewCount,
-            completedCount);
-    }
 
     public bool CanChat(RepairOrder order) => order.SelectedMaster != null
         && (Mode == AccountMode.Client || order.IsLocalMasterSelected)

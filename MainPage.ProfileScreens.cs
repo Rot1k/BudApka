@@ -26,6 +26,7 @@ public partial class MainPage
         {
             r.Add(Body("Статистика майстра", 16));
             r.Add(Card(MasterStatsView(PrototypeViewModel.LocalMasterId)));
+            r.Add(MasterReviewsView(PrototypeViewModel.LocalMasterId));
         }
         r.Add(
             Card(

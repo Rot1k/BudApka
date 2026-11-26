@@ -39,7 +39,7 @@ public partial class MainPage
         string rating = stats.AverageRating is double average
             ? $"Середня оцінка: {average.ToString("0.0", CultureInfo.GetCultureInfo("uk-UA"))} із 5"
             : "Оцінок поки немає";
-        return new VerticalStackLayout
+        var view = new VerticalStackLayout
         {
             Spacing = 4,
             Children =
@@ -48,6 +48,48 @@ public partial class MainPage
                 Body($"Виконані замовлення: {stats.CompletedOrders}", 14),
             },
         };
+        if (stats.DemoRatingCount > 0)
+        {
+            view.Add(Body(
+                $"Враховано демонстраційних оцінок без тексту: {stats.DemoRatingCount}",
+                14, true));
+        }
+
+        return view;
+    }
+
+    View MasterReviewsView(string masterId)
+    {
+        var reviews = _viewModel.GetMasterReviews(masterId).ToArray();
+        var view = new VerticalStackLayout { Spacing = 8 };
+        view.Add(Body($"Відгуки · {reviews.Length}", 16));
+        if (reviews.Length == 0)
+        {
+            view.Add(Card(Body("Відгуків із завершених замовлень поки немає.", 14)));
+        }
+
+        foreach (var item in reviews)
+        {
+            view.Add(Card(ReviewView(item.RequestId, item.Category, item.Review)));
+        }
+
+        return view;
+    }
+
+    View ReviewView(int requestId, string category, MasterReview review)
+    {
+        var content = new VerticalStackLayout { Spacing = 4 };
+        content.Add(WithIcon("star", Body($"{review.Rating} із 5", 14)));
+        string date = review.CreatedAt.ToString("d", CultureInfo.GetCultureInfo("uk-UA"));
+        content.Add(Body($"№{requestId} · {category} · {date}", 14, true));
+        bool hasText = review.Text.Length > 0;
+        content.Add(Body(hasText ? review.Text : "Без тексту", 14, !hasText));
+        if (review.IsDemo)
+        {
+            content.Add(Body("Демонстраційний відгук", 14, true));
+        }
+
+        return content;
     }
 
     static string EquipmentSummary(EquipmentRecord? item)

@@ -111,11 +111,11 @@ internal sealed partial class PrototypeViewModel
             {
                 order.RecordedVisitText = $"{order.VisitDate:d} · {order.VisitWindow}";
             }
-            if (rating is int value)
+            if (rating is int value && masterId != null)
             {
-                order.Rating = value;
-                order.HasReview = true;
-                order.ReviewText = "Тестовий відгук про виконану роботу.";
+                order.Review = new MasterReview(masterId, value,
+                    "Тестовий відгук про виконану роботу.",
+                    DateTime.Now.AddDays(-(id % 7)), IsDemo: true);
             }
 
             _orders.Add(id, order);

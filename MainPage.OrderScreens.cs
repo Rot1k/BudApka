@@ -129,7 +129,17 @@ public partial class MainPage
                 },
             }
         );
-        string ratingDraft = order.Rating.ToString();
+        if (order.Review is { } savedReview)
+        {
+            r.Add(Card(ReviewView(order.Request.Id, order.Request.Category, savedReview)));
+            r.Add(Body("Відгук уже збережено. Повторно оцінити замовлення не можна.", 14, true));
+            r.Add(CreateButton("Готово", true, () =>
+                _viewModel.CurrentScreen = _completionReturnScreen));
+            return r;
+        }
+
+        string ratingDraft = "5";
+        string reviewDraft = "";
         r.Add(LabeledField(
             "Оцінка", ratingDraft, "5 із 5", "Оберіть оцінку від 1 до 5.",
             value => ratingDraft = value,
@@ -140,7 +150,7 @@ public partial class MainPage
         r.Add(Body("Відгук · необов’язково", 14));
         var review = new Editor
         {
-            Text = order.ReviewText,
+            Text = reviewDraft,
             Placeholder = "Напишіть кілька слів про роботу",
             FontFamily = "Inter",
             FontSize = 16,
@@ -149,7 +159,7 @@ public partial class MainPage
             BackgroundColor = ThemeColor("#FFFFFF", "#202833"),
             HeightRequest = 112,
         };
-        review.TextChanged += (_, e) => order.ReviewText = e.NewTextValue;
+        review.TextChanged += (_, e) => reviewDraft = e.NewTextValue;
         r.Add(review);
         if (order.StatusBeforeCompletion is { } previous)
         {
@@ -157,26 +167,23 @@ public partial class MainPage
             {
                 order.Status = previous;
                 order.StatusBeforeCompletion = null;
-                order.ReviewText = "";
                 _viewModel.CurrentScreen = _completionReturnScreen;
             }));
         }
         r.Add(CreateButton("Зберегти відгук", true, () =>
         {
-            if (!ValidateFields() || !int.TryParse(ratingDraft, out int rating))
+            if (!ValidateFields() || !int.TryParse(ratingDraft, out int rating)
+                || !_viewModel.SaveReview(order, rating, reviewDraft))
             {
                 return;
             }
 
-            order.Rating = rating;
-            order.ReviewText = order.ReviewText.Trim();
-            order.HasReview = true;
             _viewModel.CurrentScreen = _completionReturnScreen;
         }));
         r.Add(CreateButton("Пропустити відгук", false, () =>
         {
-            order.ReviewText = "";
-            order.Rating = 5;
+            // Completion is confirmed; the review can still be left from the order card.
+            order.StatusBeforeCompletion = null;
             _viewModel.CurrentScreen = _completionReturnScreen;
         }));
         return r;
@@ -359,13 +366,21 @@ public partial class MainPage
             content.Add(Body(order.RecordedVisitText, 14, true));
         }
 
-        if (order.Status == OrderStatus.Completed && order.HasReview)
+        if (order.Status == OrderStatus.Completed && order.Review is { } review)
         {
-            content.Add(Body($"Оцінка: {order.Rating} із 5", 14, true));
-            if (order.ReviewText.Length > 0)
+            content.Add(Body($"Оцінка: {review.Rating} із 5", 14, true));
+            if (review.Text.Length > 0)
             {
-                content.Add(Body(order.ReviewText, 14));
+                content.Add(Body(review.Text, 14));
             }
+        }
+        else if (client && PrototypeViewModel.CanReview(order))
+        {
+            content.Add(CreateButton("Залишити відгук", false, () =>
+            {
+                _completionReturnScreen = _viewModel.CurrentScreen;
+                _viewModel.OpenOrder(order, "Completion");
+            }, "star"));
         }
 
         if (client && order.Status == OrderStatus.HasResponses)
